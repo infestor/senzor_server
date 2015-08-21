@@ -1,0 +1,2 @@
+"c:\Honza\RaspberryChain\bin\arm-linux-gnueabihf-g++.exe" -Wall -std=gnu++0x -O3 -g0 -s -pthread -lpthread -shared-libgcc -fno-use-linker-plugin main.cpp support.cpp cfg_files.cpp uart.cpp node_values.cpp -o server
+@rem "bin\arm-linux-gnueabihf-g++.exe" -Wall -O0 -s -g0 -ggdb -g3 -fno-use-linker-plugin main.cpp -o server_debug
