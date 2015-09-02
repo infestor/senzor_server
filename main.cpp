@@ -5,6 +5,7 @@
 #include <queue>
 #include <thread>
 #include <mutex>
+#include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,6 +90,9 @@ std::mutex mutexValues;
 std::mutex mutexIntervals;
 
 volatile bool threadRevealFinished = true; //should be true most of the time, false only during reveal
+volatile bool threadProcessingPriotityCommand = false; //this is used, when we need urgently send something over uart
+volatile int  threadProcessingPriotityCommand_result;
+volatile uchar urgentReadResponsePacket[11];
 //----------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------
 
@@ -606,17 +610,17 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
         uchar cmdStripped[cmdLen-1];
         strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
         
-        uchar nodeNum = '\0';
-        uchar sensNum = '\0';
-        uchar newCalib = '\0';
+        volatile uchar nodeNum  = '\0';
+        volatile uchar sensNum  = '\0';
+        volatile uchar newCalib = '\0';
         
         if (chyba == false)
         {                
             //explode cmd to values
             char** pole;
             int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            sensNum = atoi(pole[2]);
+            nodeNum  = atoi(pole[1]);
+            sensNum  = atoi(pole[2]);
             newCalib = atoi(pole[3]);
             freeArrayOfPointers((void***)&pole, poleLen);
             
@@ -634,11 +638,11 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
         {
             //create and push message/command to thread queue
             THREAD_QUEUE_REC rec;
-            rec.cmd = CMD_WRITE;
+            rec.cmd = CMD_WRITE_CALIB;
             rec.nodeNum = nodeNum;
             rec.sensorNum = sensNum;
             rec.sensorVal = newCalib;  //calibration value is stored to SensorVal field of thread record
-            rec.intervalErr = 10;
+            rec.intervalErr = 5;
             
             mutexQueue.lock();
             threadQueue.push(rec);
@@ -646,7 +650,7 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             
             L = asprintf((char**)&outMsg, "<[OK]%s>", cmd);
             appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
-            printf(">OK: %s\n", cmd);
+            printf(">OK: %s, %d\n", cmd, newCalib);
             free(outMsg);
         }
         else //there was some error during parsing
@@ -655,7 +659,82 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
             appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
         }
-    }    
+    }
+    //===== [getCalib:node:sensor]  - will read calibration value of internal temp sensor
+    else if (strncmp((const char*)cmd, "[getCalib:", 10) == 0)
+    {
+        //count colons (:) - must be 3
+        int colons = 0;
+        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
+        if (colons != 2) { chyba = true; }
+        
+        //check if sensornum is present (there is not :] together on the end)
+        if (cmd[cmdLen-2] == ':') chyba = true;
+        
+        //strip command from [ and ], but preserve \0 on end
+        uchar cmdStripped[cmdLen-1];
+        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
+        
+        uchar nodeNum = '\0';
+        uchar sensNum = '\0';
+        
+        if (chyba == false)
+        {                
+            //explode cmd to values
+            char** pole;
+            int poleLen = explode((char *)cmdStripped, ":", &pole);
+            nodeNum = atoi(pole[1]);
+            sensNum = atoi(pole[2]);
+            freeArrayOfPointers((void***)&pole, poleLen);
+            
+            //is the request for existing Node?
+            if (nodeValues[nodeNum] == NULL) chyba = true;
+            //sensor on node exists?
+            else if (nodeValues[nodeNum]->num_sensors < sensNum+1) chyba = true;
+            //is sensor type = internal temp sensor?
+            else if (nodeValues[nodeNum]->sensor_types[sensNum] != TEPLOTA_PROCESORU) chyba = true;
+        }
+        
+        int L;
+        uchar *outMsg;
+        if (chyba == false)
+        {
+            //create and push message/command to thread queue
+            THREAD_QUEUE_REC rec;
+            rec.cmd = CMD_URGENT_READ;
+            rec.nodeNum = nodeNum;
+            rec.sensorNum = sensNum;
+            rec.sensorVal = CALIBRATION_READ;  //command for CALIBRATION_READ (its value) is stored to SensorVal field of thread record
+            rec.intervalErr = 4;
+            
+            mutexQueue.lock();
+            threadQueue.push(rec);
+            threadProcessingPriotityCommand = true;
+            mutexQueue.unlock();
+            
+            while (threadProcessingPriotityCommand == true) {}
+            if (threadProcessingPriotityCommand_result == 1)
+            {
+                
+                L = asprintf((char**)&outMsg, "<[OK]%s[%d]>", cmd, urgentReadResponsePacket[7]);
+                printf(">OK: %s\n", cmd);
+            }
+            else
+            {
+                L = asprintf((char**)&outMsg, "<[ERR]%s>", cmd);
+                printf(">ERR: %s\n", cmd);
+            }
+            
+            appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
+            free(outMsg);
+        }
+        else //there was some error during parsing
+        {
+            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
+            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
+            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
+        }
+    }        
     //=== any other unknown command is error
     else
     {
@@ -672,6 +751,45 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
     return 1;
 }
 
+
+
+//=============================================================================
+//====== Decreasing THREAD (once per second decreases all intervals in queue) =====
+//=============================================================================
+void threadDecreaseIntervals(void)
+{
+    while(1) {
+
+        //cycle through intervalVect and decrease values by 1
+        //if some value is 0, then it means to read real value over UART for that sensor
+        //then reload its value to original value from sensorIntervals
+        std::vector<SENSOR_INTERVAL_VECT_REC>::iterator it_vect;
+        mutexIntervals.lock();
+        for (it_vect = intervalVect.begin(); it_vect < intervalVect.end(); it_vect++)
+        {
+            sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown -= 1; //decrease value
+            if (sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown == 0)
+            {
+                sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval; //reload
+                
+                THREAD_QUEUE_REC rec;
+                rec.cmd = CMD_READ;
+                rec.nodeNum = it_vect->nodeNum;
+                rec.sensorNum = it_vect->sensorNum;
+                rec.intervalOk = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval;
+                
+                mutexQueue.lock();
+                threadQueue.push(rec);
+                mutexQueue.unlock();
+            }
+        }
+        mutexIntervals.unlock();
+            
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+}
+
+
 //=============================================================================
 //====== UART thread (reads and saves data in backgroud) =====================
 //=============================================================================
@@ -680,7 +798,7 @@ void threadProcessQueue(void)
     printf("## UART thread started..\n");
 
     bool work;
-    THREAD_QUEUE_REC rec;
+    volatile THREAD_QUEUE_REC rec;
     
     while (1)
     {
@@ -688,8 +806,9 @@ void threadProcessQueue(void)
         mutexQueue.lock();
         if (!threadQueue.empty())
         {
-            rec = threadQueue.front();
-            threadQueue.pop();
+            THREAD_QUEUE_REC recTemporary = threadQueue.front();
+            memcpy((void*)&rec, (const void*)&recTemporary, sizeof(THREAD_QUEUE_REC) );
+            //rec = threadQueue.front();
             work = true;
         }
         mutexQueue.unlock();
@@ -769,12 +888,56 @@ void threadProcessQueue(void)
                   }
                 }
                 //no need to do anything on success writing
-            }            
+            }
+             else if (rec.cmd == CMD_URGENT_READ)
+            {
+                uchar sensor_read_packet[12] = {254, 1, 99, 3, 255, 0, 1, 99, 0, 0, 0, 0};
+
+                sensor_read_packet[2] = rec.nodeNum;
+                sensor_read_packet[5] = rec.sensorVal; //command for request
+                sensor_read_packet[7] = rec.sensorNum;
+
+                if (sendAndGetResponse(sensor_read_packet, (uchar*)urgentReadResponsePacket) >= 0)
+                {
+                    //on success reading back
+                    threadProcessingPriotityCommand = false;
+                    threadProcessingPriotityCommand_result = 1;
+                    //result is in urgentReadResponsePacket  (whole received packet)                  
+                } 
+                else
+                {
+                  if (rec.intervalErr > 0) //we have some more tryouts available
+                  {
+                      rec.intervalErr -= 1;
+                      
+                      THREAD_QUEUE_REC newRec;
+                      newRec.nodeNum = rec.nodeNum;
+                      newRec.sensorNum = rec.sensorNum;
+                      newRec.sensorVal = rec.sensorVal;
+                      newRec.intervalErr = rec.intervalErr;
+                      
+                      //add again to self-queue with decreased max-try-counter
+                      mutexQueue.lock();
+                      threadQueue.push(newRec);
+                      mutexQueue.unlock();
+                  }
+                  else
+                  { //no more tryouts left.. end the command with fail
+                    threadProcessingPriotityCommand = false;
+                    threadProcessingPriotityCommand_result = -1;                  
+                  }
+                }
+            }                       
             else if (rec.cmd == CMD_REVEAL)
             {
                 revealNodes();
                 threadRevealFinished = true;
             }
+            
+            //after processing record from queue whe have to throw it away!!!
+            mutexQueue.lock();
+            threadQueue.pop();
+            mutexQueue.unlock();
         }
         else //queue empty
         {
@@ -782,8 +945,6 @@ void threadProcessQueue(void)
         }
     }
 }
-
-
 
 //==============================================================================================
 int main(int argc, char ** argv)
@@ -856,120 +1017,92 @@ int main(int argc, char ** argv)
     
     printf("Starting background THREAD for handling UART comm\n");
     std::thread threadUART(threadProcessQueue);
-    
+    printf("Starting background THREAD for decreasing countdowns in queue\n");
+    std::thread threadCOUNTDOWN(threadDecreaseIntervals);
+        
     printf("\n");
 
-    int x = 0;
-    while (x < 100) //infinite program loop
+    while (1) //infinite program loop
     {
-         
-        for (int aa=0; aa < 30; aa++) //together with inner 1s cycle this should give in result 30s wait time
+        
+        //handling existing socket connections 
+        if (incoming_conns > 0)
         {
-            //cycle through intervalVect and decrease values by 1
-            //if some value is 0, then it means to read real value over UART for that sensor
-            //then reload its value to original value from sensorIntervals
-            std::vector<SENSOR_INTERVAL_VECT_REC>::iterator it_vect;
-            mutexIntervals.lock();
-            for (it_vect = intervalVect.begin(); it_vect < intervalVect.end(); it_vect++)
+            int rv = poll(ufds, incoming_conns, 20);
+            if (rv > 0)
             {
-                sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown -= 1; //decrease value
-                if (sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown == 0)
+                uchar ind = 0;
+                do
                 {
-                    sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval; //reload
-                    
-                    THREAD_QUEUE_REC rec;
-                    rec.cmd = CMD_READ;
-                    rec.nodeNum = it_vect->nodeNum;
-                    rec.sensorNum = it_vect->sensorNum;
-                    rec.intervalOk = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval;
-                    
-                    mutexQueue.lock();
-                    threadQueue.push(rec);
-                    mutexQueue.unlock();
-                }
-            }
-            mutexIntervals.unlock();
-            
-            //repeatedly check input Sockets if there is some command
-            for (int aaa=0; aaa <10; aaa++) //this cycle should take 1 sec
-            {
-                if (incoming_conns > 0)
-                {
-                    int rv = poll(ufds, incoming_conns, 20);
-                    if (rv > 0)
+                    if (ufds[ind].revents & POLLIN)
                     {
-                        uchar ind = 0;
-                        do
+                        uchar inBuff[255];
+                        memset(inBuff, 0, sizeof(inBuff) );
+                        ssize_t len = recv(ufds[ind].fd, inBuff, sizeof(inBuff), 0);
+                        //TODO : if incoming message is bigger than inBuff size, read it repeatedly with realloc to read all data
+                        if (len < 0)
                         {
-                            if (ufds[ind].revents & POLLIN)
+                            printf("Socket error %d\n", errno);
+                            
+                        }
+                        else if (len ==0) //socket closed
+                        {
+                            printf("Socket Closed\n");
+                            close(ufds[ind].fd);
+                            removeUfd(ind); //remove this descriptor from queue
+                            if (ind < incoming_conns) continue; //without increasing index
+                        }
+                        else
+                        {
+                            //printf("received %zd Bytes\n", len);
+                            printf(">%s", inBuff);
+                            uchar *outBuff;
+                            int outBufLen = 200;
+                            int outBufPos = -1; //0;
+                            outBuff = (uchar *)malloc(outBufLen);
+                            processSockCmd(inBuff, len, &outBuff, &outBufPos, &outBufLen);
+                            if (outBufPos >= 0) //only if there is something added in outBuffer (something was processed from incoming message)
                             {
-                                uchar inBuff[255];
-                                memset(inBuff, 0, sizeof(inBuff) );
-                                ssize_t len = recv(ufds[ind].fd, inBuff, sizeof(inBuff), 0);
-                                //TODO : if incoming message is bigger than inBuff size, read it repeatedly with realloc to read all data
-                                if (len < 0)
-                                {
-                                    printf("Socket error %d\n", errno);
-                                    
-                                }
-                                else if (len ==0) //socket closed
-                                {
-                                    printf("Socket Closed\n");
-                                    close(ufds[ind].fd);
-                                    removeUfd(ind); //remove this descriptor from queue
-                                    if (ind < incoming_conns) continue; //without increasing index
-                                }
-                                else
-                                {
-                                    //printf("received %zd Bytes\n", len);
-                                    printf(">%s", inBuff);
-                                    uchar *outBuff;
-                                    int outBufLen = 200;
-                                    int outBufPos = -1; //0;
-                                    outBuff = (uchar *)malloc(outBufLen);
-                                    processSockCmd(inBuff, len, &outBuff, &outBufPos, &outBufLen);
-                                    if (outBufPos >= 0) //only if there is something added in outBuffer (something was processed from incoming message)
-                                    {
-                                        //at the end append linefeed
-                                        appendToBuffer(&outBuff, &outBufLen, &outBufPos, (uchar*)"\n\r", 2);
-                                        send(ufds[ind].fd, outBuff, outBufPos + 1, 0);
-                                        // TODO: check whether all data was sent in one iteration, else repeat with offset outbuf+sentBytes
-                                    }
-                                    free(outBuff);
-                                }
+                                //at the end append linefeed
+                                appendToBuffer(&outBuff, &outBufLen, &outBufPos, (uchar*)"\n\r", 2);
+                                send(ufds[ind].fd, outBuff, outBufPos + 1, 0);
+                                // TODO: check whether all data was sent in one iteration, else repeat with offset outbuf+sentBytes
                             }
-                            else if ((ufds[ind].revents & POLLHUP) || (ufds[ind].revents & POLLERR))
-                            {
-                                printf("HangUp\n");
-                                removeUfd(ind); //remove this descriptor from queue
-                                close(ufds[ind].fd);
-                                if (ind < incoming_conns) continue; //without increasing index
-                            }
-                            ind++;
-                        } while ( (ind < incoming_conns) && (incoming_conns > 0) );
+                            free(outBuff);
+                        }
                     }
-                }
-                
-                if (incoming_conns < MAX_CONNS)
-                {
-                    int acceptResult = accept(socketfd, NULL, NULL);
-                    if (acceptResult > 0)
+                    else if ((ufds[ind].revents & POLLHUP) || (ufds[ind].revents & POLLERR))
                     {
-                        int incoming_sd;
-                        incoming_sd = acceptResult;
-                        printf("Connection accepted. Using new socketfd : %d\n", incoming_sd);
-                        fcntl(incoming_sd, F_SETOWN, getpid());
-                        int flags = fcntl(incoming_sd, F_GETFL, 0);
-                        fcntl(incoming_sd, F_SETFL, flags | O_NONBLOCK); //| O_ASYNC);
-                        ufds[incoming_conns].fd = incoming_sd;
-                        ufds[incoming_conns].events = POLLIN | POLLHUP;
-                        send(incoming_sd, "[hello]\n", 8, 0);
-                        incoming_conns++;
+                        printf("HangUp\n");
+                        removeUfd(ind); //remove this descriptor from queue
+                        close(ufds[ind].fd);
+                        if (ind < incoming_conns) continue; //without increasing index
                     }
-                }
-                usleep(80000);
-            } //end of 1s cycle (10 x 100ms)
-        } //end of 30s cycle (30 x 1sec)
+                    ind++;
+                } while ( (ind < incoming_conns) && (incoming_conns > 0) );
+            }
+        }
+        
+        //accepting new socket connections (if any)
+        if (incoming_conns < MAX_CONNS)
+        {
+            int acceptResult = accept(socketfd, NULL, NULL);
+            if (acceptResult > 0)
+            {
+                int incoming_sd;
+                incoming_sd = acceptResult;
+                printf("Connection accepted. Using new socketfd : %d\n", incoming_sd);
+                fcntl(incoming_sd, F_SETOWN, getpid());
+                int flags = fcntl(incoming_sd, F_GETFL, 0);
+                fcntl(incoming_sd, F_SETFL, flags | O_NONBLOCK); //| O_ASYNC);
+                ufds[incoming_conns].fd = incoming_sd;
+                ufds[incoming_conns].events = POLLIN | POLLHUP;
+                send(incoming_sd, "[hello]\n", 8, 0);
+                incoming_conns++;
+            }
+        }
+        
+        usleep(50000);
         
         //end of infinite program loop
         //tcflush(uart_fd, TCIOFLUSH); //we can only flush in separate thread, because only it can access uart

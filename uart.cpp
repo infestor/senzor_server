@@ -393,12 +393,13 @@ int writeUartSensorCalib(uchar nodeNum, uchar sensorNum, int calibData)
 //so useful data of packet starts at index 1 !!
   uchar paket[12] = {254, 1, 99, 3, 255, 5, 1, 99, 0, 0, 0, 0};
     paket[2] = nodeNum;
-    paket[5] = 5; //calibration write cmd
+    paket[5] = CALIBRATION_WRITE; //calibration write cmd
     paket[6] = 1; //length of data written
     paket[7] = sensorNum;
     paket[8] = uchar(calibData);
   
   int result = transceiveData(paket);
+  printf("## setCalib - r:%i, newVal:%d\n", result, calibData);
   return result;
 }
 

@@ -1,9 +1,9 @@
 #include <sys/types.h>
 
-#define MAX_NODES 6
-#define MAX_SENSORS 6
+#define MAX_NODES 6 //can be changed up to 255
+#define MAX_SENSORS 6 //cannot be changed - hard value
 #define MAX_SENSOR_NAME_LEN 30;
-#define MAX_CONNS 7
+#define MAX_CONNS 7 //can be changed to higher number
 
 //commands for thread
 #define CMD_NONE 0
@@ -11,6 +11,7 @@
 #define CMD_WRITE 2
 #define CMD_READ 3
 #define CMD_WRITE_CALIB 4
+#define CMD_URGENT_READ 5
 
 //types of sensoors
 #define VYSTUP_ZAP_VYP 0
