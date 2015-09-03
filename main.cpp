@@ -100,6 +100,48 @@ volatile uchar urgentReadResponsePacket[11];
 //========================================================================        
 //====== SOCKET related functions ========================================        
 //========================================================================        
+bool parseCommandArguments(uchar *cmd, uchar cmdLen, uchar numParams, int *param1 = NULL, int *param2 = NULL, int *param3 = NULL)
+{
+	bool chyba = false;
+
+    //count colons (:) - must be numParams
+    uchar colons = 0;
+    for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
+    if (colons != numParams) { chyba = true; }
+
+    //check if all params are present (there is not :] together on the end)
+    if (cmd[cmdLen-2] == ':') chyba = true;
+
+    //strip command from [ and ], but preserve \0 on end (for strlen)
+    uchar cmdStripped[cmdLen-1];
+    cmdStripped[cmdLen-2] = 0;
+    strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
+
+    if (chyba == false)
+    {
+        //explode cmd to values
+        char** pole;
+        int poleLen = explode((char *)cmdStripped, ":", &pole);
+
+        //copy values into variables given by references
+        if (numParams > 0) {
+        	if (param1 != NULL) *param1 = atoi(pole[1]);
+        }
+
+        if (numParams > 1) {
+        	if (param2 != NULL) *param2 = atoi(pole[2]);
+        }
+
+        if (numParams > 2) {
+        	if (param3 != NULL) *param3 = atoi(pole[3]);
+        }
+
+        //free allocated memory
+        freeArrayOfPointers((void***)&pole, poleLen);
+    }
+
+    return chyba;
+}
 
 int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos, int *outLen)
 {
@@ -118,7 +160,10 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             pos++;
             gpos++;
             //if ( (pos > 30) || (gpos == bufLen) ) {chyba = true; break; }
-            if ( gpos == bufLen) {chyba = true; break; }
+            if ( gpos == bufLen) {
+            	chyba = true;
+            	break;
+            }
         }
         
         if (chyba == true)
@@ -135,7 +180,7 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
     uchar cmd[30];
     pos = 0;
     memset(cmd, 0, sizeof(cmd) );
-    while (buff[pos] != 93)
+    while (buff[pos] != ']')
     {
         cmd[pos] = buff[pos];
         pos++;
@@ -160,93 +205,55 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
     //=== getVal command [getVal:nodeNum:sensorId]
     if (strncmp((const char*)cmd, "[getVal:", 8) == 0)
     {
-        //count colons (:) - must be 2
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 2) { chyba = true; }
+    	uchar nodeNum;
+    	uchar nodeSens;
+
+    	chyba = parseCommandArguments(cmd, cmdLen, 2, (int*)&nodeNum, (int*)&nodeSens, NULL);
         
-        if (chyba == false)
-        {
-            //strip command from [ and ], but preserve \0 on end
-            uchar cmdStripped[cmdLen-1];
-            strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-            
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            uchar nodeNum = atoi(pole[1]);
-            uchar nodeSens = atoi(pole[2]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
+    	if (chyba == false) {
             //is the request for existing Node and sensor?
             if ( (nodeValues[nodeNum] == NULL) || (nodeValues[nodeNum]->num_sensors-1 < nodeSens) ) chyba = true;
-            
-            uchar *outMsg;
-            int L;
-            if (chyba == false)
-            {
-                uchar *sensorValStr;
-                int sensorValStrLen;
+    	}
 
-                //decide if the value vas ever read from real sensor
-                //bcause on initialisation the union of value is filled by 0xFF
-                if (nodeValues[nodeNum]->sensors[nodeSens]->uint_val != UINT_MAX)
-                {
-                    //use right type of sensor value (float or int..)!!
-                    mutexValues.lock();
-                    (*getSensorValStr[nodeValues[nodeNum]->sensor_types[nodeSens] ])(nodeValues[nodeNum], nodeSens, &sensorValStr, &sensorValStrLen);
-                    mutexValues.unlock();
-                }
-                else //if the value vas never read from sensor, return X instead of value
-                {
-                    sensorValStrLen = asprintf((char**)&sensorValStr, "x");
-                }
-                
-                L = asprintf((char**)&outMsg, "<[OK]%s[%s]>", cmd, sensorValStr);
-                free(sensorValStr);
-                printf(">OK: %s\n", cmd);
-            }
-            else
-            {
-                L = asprintf((char**)&outMsg, "<[ERR]%s>", cmd);
-                printf(">ERR: %s\n", cmd);
-            }
-            
-            appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
-            free(outMsg);
-        }
-        else //there was error processing this particular command, add error response to output buffer
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+		uchar *outMsg;
+		int L;
+		if (chyba == false)
+		{
+			uchar *sensorValStr;
+			int sensorValStrLen;
+
+			//decide if the value vas ever read from real sensor
+			//bcause on initialisation the union of value is filled by 0xFF
+			if (nodeValues[nodeNum]->sensors[nodeSens]->uint_val != UINT_MAX)
+			{
+				//use right type of sensor value (float or int..)!!
+				mutexValues.lock();
+				(*getSensorValStr[nodeValues[nodeNum]->sensor_types[nodeSens] ])(nodeValues[nodeNum], nodeSens, &sensorValStr, &sensorValStrLen);
+				mutexValues.unlock();
+			}
+			else //if the value vas never read from sensor, return X instead of value
+			{
+				sensorValStrLen = asprintf((char**)&sensorValStr, "x");
+			}
+
+			L = asprintf((char**)&outMsg, "<[OK]%s[%s]>", cmd, sensorValStr);
+			free(sensorValStr);
+			appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
+			free(outMsg);
+			printf(">OK: %s\n", cmd);
+		}
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }
     //=== getNodeProp - get node properties/presentation [getNodeProp:nodeNum]
     else if (strncmp((const char*)cmd, "[getNodeProp:", 13) == 0)
     {
-        //count colons (:) - must be 1
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 1) { chyba = true; } 
+        uchar nodeNum;
         
-        //check if nodeNum is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') { chyba = true; }
-
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-        
-        uchar nodeNum = '\0';
+        chyba = parseCommandArguments(cmd, cmdLen, 1, (int*)&nodeNum, NULL, NULL);
         
         if (chyba == false)
         {
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
         }
@@ -268,44 +275,22 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             printf(">OK: %s\n", cmd);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }
     //=== setVal - set value of sensor which is writeable [setSensVal:nodeNum:sensorNum:value]
     //TODO: so far there is no sensor value type handling - because the only sensor supporting
     //writes is ON/OFF switch and there is used unsigned int(char) type
     else if (strncmp((const char*)cmd, "[setVal:", 8) == 0)
     {
-        //count colons (:) - must be 3
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 3) { chyba = true; }
-        
-        //check if nodeNum is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') chyba = true;
-        
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-        
-        uchar nodeNum = '\0';
-        uchar sensNum = '\0';
-        uchar sensVal = '\0';
+        uchar nodeNum;
+        uchar sensNum;
+        uchar sensVal;
+
+        chyba = parseCommandArguments(cmd, cmdLen, 3, (int*)&nodeNum, (int*)&sensNum, (int*)&sensVal);
         
         if (chyba == false)
         {
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            sensNum = atoi(pole[2]);
-            sensVal = atoi(pole[3]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
             //sensor on node exists?
@@ -339,42 +324,20 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             printf(">OK: %s\n", cmd);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }
     //=== setInterval - set interval of sensor reading [setInterval:nodeNum:sensorNum:value]
     else if (strncmp((const char*)cmd, "[setInterval:", 13) == 0)
     {
-        //count colons (:) - must be 3
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 3) { chyba = true; }
+        uchar nodeNum;
+        uchar sensNum;
+        int sensVal;
         
-        //check if nodeNum is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') chyba = true;
+        chyba = parseCommandArguments(cmd, cmdLen, 3, (int*)&nodeNum, (int*)&sensNum, &sensVal);
         
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-
-        uchar nodeNum = '\0';
-        uchar sensNum = '\0';
-        int sensVal = 0;
-            
         if (chyba == false)
         {        
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            sensNum = atoi(pole[2]);
-            sensVal = atoi(pole[3]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
             //sensor on node exists?
@@ -404,6 +367,7 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             if (found == true)
             {
                 mutexIntervals.lock();
+                //set new interval value
                 sensorIntervals[nodeNum][sensNum].interval = sensVal;
                 //if countdown is bigger than new interval, set it to new value
                 if (sensorIntervals[nodeNum][sensNum].countDown > sensVal) sensorIntervals[nodeNum][sensNum].countDown = sensVal;
@@ -459,40 +423,19 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             printf(">OK: %s\n", cmd);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);            
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }
     //=== getInterval - gets interval of sensor reading [getInterval:nodeNum:sensorNum]
     else if (strncmp((const char*)cmd, "[getInterval:", 13) == 0)
     {
-        //count colons (:) - must be 2
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 2) { chyba = true; }
-        
-        //check if nodeNum is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') chyba = true;
-        
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-        
-        uchar nodeNum = '\0';
-        uchar sensNum = '\0';
+        uchar nodeNum;
+        uchar sensNum;
+
+        chyba = parseCommandArguments(cmd, cmdLen, 2, (int*)&nodeNum, (int*)&sensNum, NULL);
         
         if (chyba == false)
         {                
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            sensNum = atoi(pole[2]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
             //sensor on node exists?
@@ -513,12 +456,8 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             printf(">OK: %s\n", cmd);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }
     //=== invokeSearch - starts node reveal process, non blocking mode, will send OK and when finished, will send [FIN][invokeSearch]
     else if (strncmp((const char*)cmd, "[invokeSearch]", 14) == 0)
@@ -598,32 +537,15 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
     //===== [setCalib:node:sensor:calib]  - will write calibration value of internal temp sensor
     else if (strncmp((const char*)cmd, "[setCalib:", 10) == 0)
     {
-        //count colons (:) - must be 3
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 3) { chyba = true; }
+
+        volatile uchar nodeNum;
+        volatile uchar sensNum;
+        volatile uchar newCalib;
         
-        //check if calib is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') chyba = true;
-        
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-        
-        volatile uchar nodeNum  = '\0';
-        volatile uchar sensNum  = '\0';
-        volatile uchar newCalib = '\0';
-        
+        chyba = parseCommandArguments(cmd, cmdLen, 3, (int*)&nodeNum, (int*)&sensNum, (int*)&newCalib);
+
         if (chyba == false)
-        {                
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum  = atoi(pole[1]);
-            sensNum  = atoi(pole[2]);
-            newCalib = atoi(pole[3]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
+        {
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
             //sensor on node exists?
@@ -653,40 +575,18 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             printf(">OK: %s, %d\n", cmd, newCalib);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
     }
     //===== [getCalib:node:sensor]  - will read calibration value of internal temp sensor
     else if (strncmp((const char*)cmd, "[getCalib:", 10) == 0)
     {
-        //count colons (:) - must be 3
-        int colons = 0;
-        for (int xxx=0; xxx < cmdLen; xxx++) { if (cmd[xxx] == ':') colons++; }
-        if (colons != 2) { chyba = true; }
-        
-        //check if sensornum is present (there is not :] together on the end)
-        if (cmd[cmdLen-2] == ':') chyba = true;
-        
-        //strip command from [ and ], but preserve \0 on end
-        uchar cmdStripped[cmdLen-1];
-        strncpy((char *)cmdStripped, (const char *)cmd+1, (size_t)cmdLen-2);
-        
-        uchar nodeNum = '\0';
-        uchar sensNum = '\0';
+        uchar nodeNum;
+        uchar sensNum ;
+
+        chyba = parseCommandArguments(cmd, cmdLen, 2, (int*)&nodeNum, (int*)&sensNum, NULL);
         
         if (chyba == false)
-        {                
-            //explode cmd to values
-            char** pole;
-            int poleLen = explode((char *)cmdStripped, ":", &pole);
-            nodeNum = atoi(pole[1]);
-            sensNum = atoi(pole[2]);
-            freeArrayOfPointers((void***)&pole, poleLen);
-            
+        {
             //is the request for existing Node?
             if (nodeValues[nodeNum] == NULL) chyba = true;
             //sensor on node exists?
@@ -728,12 +628,8 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
             appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
             free(outMsg);
         }
-        else //there was some error during parsing
-        {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
-            appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
-        }
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
     }        
     //=== any other unknown command is error
     else
@@ -743,7 +639,15 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
         
         appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
     }
-    
+
+    //if chyba was true, print [ERR] tag at the end - common for all commands
+    if (chyba == true) {
+		appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR]", 6);
+		appendToBuffer(outBuf, outLen, outBufPos, cmd, cmdLen);
+		appendToBuffer(outBuf, outLen, outBufPos, (uchar*)">", 1);
+		printf(">ERR: %s\n", cmd);
+    }
+
     //process iteratively if there is something else unprocessed in input buffer
     //...
     if (gpos+1 < bufLen) processSockCmd(inBuff+gpos+1, bufLen-(gpos+1), outBuf, outBufPos, outLen);
