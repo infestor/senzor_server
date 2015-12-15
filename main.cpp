@@ -42,6 +42,7 @@ const char str_port_name_raspi[] = "/dev/ttyUSB0";
 
 const char *druhy_senzoru[] = { "Vystup ZAP/VYP", "Teplota", "Dverni spinac ON/OFF", "Teplota procesoru",
     "Teplota DS1820", "Napeti baterie 1 clanek LION", "Napeti baterie 2 clanky LION" };
+const char low_power_str[] = "low power";
 
 //const uchar sensorReturnLen[] = {1, 2, 1, 1, 2, 2, 2};
 const uchar writableSensorTypes[] = {1, 0, 0, 0, 0, 0, 0};
@@ -904,7 +905,18 @@ int main(int argc, char ** argv)
         {
             volatile NODE_VALUES_T *node = nodeValues[i];
             printf("Node %d, numOfSensors: %d", node->node, node->num_sensors);
-            for (uchar x=0; x < node->num_sensors; x++) printf(" | %s", druhy_senzoru[ node->sensor_types[x] ]);
+            for (uchar x=0; x < node->num_sensors; x++)
+            {
+                if (node->sensor_types[x] >= LOW_POWER_NODE_SIGN)
+                {
+                    printf(" | %s (%s)", druhy_senzoru[ node->sensor_types[x]-LOW_POWER_NODE_SIGN ], low_power_str);
+                }
+                else
+                {
+                    printf(" | %s", druhy_senzoru[ node->sensor_types[x] ]);
+                }
+                
+            }
             printf("\n");
         }
     }

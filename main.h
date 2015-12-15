@@ -14,6 +14,7 @@
 #define CMD_URGENT_READ 5
 
 //types of sensoors
+#define LOW_POWER_NODE_SIGN 128 
 #define VYSTUP_ZAP_VYP 0
 #define TEPLOTA 1
 #define DVERNI_SPINAC_ON_OFF 2
@@ -21,6 +22,8 @@
 #define TEPLOTA_DS1820 4
 #define NAPETI_BATERIE_1_CLANEK 5
 #define NAPETI_BATERIE_2_CLANKY 6
+
+#define LOW_POWER_ALIVE_TIMEOUT 255
 
 typedef unsigned char uint8_t;
 typedef unsigned char uchar;
@@ -61,6 +64,8 @@ typedef union {
 typedef struct {
   uchar node;
   uchar num_sensors;
+  uchar is_low_power;
+  uchar low_power_alive;
   uchar sensor_types[MAX_SENSORS]; //maximum number of sensors on one node
   volatile SENSOR_VAL_T* volatile *sensors; //pointer to array with values(union) size is num_sensors
   volatile unsigned long int sensor_read_times[MAX_SENSORS]; //timestamp of last valid reading from sensor

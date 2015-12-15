@@ -293,6 +293,8 @@ void revealNodes(void)
                 memset((void*)nodeValues[nodeNum], 0, sizeof(NODE_VALUES_T) );
                 nodeValues[nodeNum]->node = nodeNum;
                 nodeValues[nodeNum]->num_sensors = node_specs.num_sensors;
+                nodeValues[nodeNum]->is_low_power = 0; //first set it to 0 = NO, but during cycling through sensors, determine its really value
+                nodeValues[nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
                 memcpy((void*)nodeValues[nodeNum]->sensor_types, node_specs.sensors, MAX_SENSORS);
                 nodeValues[nodeNum]->sensor_names = (volatile uchar**) malloc( sizeof(uchar*) * MAX_SENSORS); //alloc array of pointers to user names of sensors
                 //int L;
@@ -315,8 +317,12 @@ void revealNodes(void)
                     nodeValues[nodeNum]->sensors[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
                     memset((void*)nodeValues[nodeNum]->sensors[x], 255, sizeof(SENSOR_VAL_T) );
                     
-                    //set interval for reading of values from sensor if it is DS1850 - set interval automatically to 60sec
-                    if (nodeValues[nodeNum]->sensor_types[x] == 4)
+                    //determine if node is low powered - if any sensor has vylue bigger than 128
+                    //that means low power node
+                    if (nodeValues[nodeNum]->sensor_types[x] >= LOW_POWER_NODE_SIGN) nodeValues[nodeNum]->is_low_power = 1;
+                    
+                    //set interval for reading of values from sensor if it is DS1820 - set interval automatically to 60sec
+                    if (nodeValues[nodeNum]->sensor_types[x] == TEPLOTA_DS1820)
                     {
                         sensorIntervals[nodeNum][x].countDown = 1;                    
                         sensorIntervals[nodeNum][x].interval = 60;
@@ -327,6 +333,18 @@ void revealNodes(void)
                         //add record to interval vector
                         intervalVect.push_back(rec);
                     }
+                    //set interval for reading of values from sensor if it is low powered DS1820 - set interval automatically to 1sec
+                    else if (nodeValues[nodeNum]->sensor_types[x] == (TEPLOTA_DS1820 + LOW_POWER_NODE_SIGN) )
+                    {
+                        sensorIntervals[nodeNum][x].countDown = 1;                    
+                        sensorIntervals[nodeNum][x].interval = 1;
+                        //prepare new record to be pushed to vector
+                        SENSOR_INTERVAL_VECT_REC rec;
+                        rec.nodeNum = nodeNum;
+                        rec.sensorNum = x;
+                        //add record to interval vector
+                        intervalVect.push_back(rec);
+                    }                    
                     else
                     {
                         //else push ONE TIME request for read of sensor value to thread queue
@@ -424,8 +442,11 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     }
     else
     {
-        //choose proper sensor value handle function (according to sensor type) from array if pointers to functions
+        //choose proper sensor value handle function (according to sensor type) from array of pointers to functions
         (*countAndStoreSensorValue[nodeValues[nodeNum]->sensor_types[sensorNum] ])(nodeValues[nodeNum], sensorNum, (uchar*)&rawData, rawLen);
+        
+        //refresh the low_power alive interval (if it is low power node)
+        if (nodeValues[nodeNum]->is_low_power == 1) nodeValues[nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
     }
     mutexValues.unlock();
     
