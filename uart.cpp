@@ -438,15 +438,22 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     //test for FFFF value as a sign of error reading from node, so store error value to array
     if (result <= 0) //( (int32_t)*rawData == 0xFFFFFFFF)
     {
-        nodeValues[nodeNum]->sensors[sensorNum]->uint_val = UINT_MAX;
+        volatile NODE_VALUES_T *node = nodeValues[nodeNum];
+        
+        //we must differ normal node and low power node
+        //for low power device we leave last valid value until the ALIVE counter is bigger than 0
+        //because we are reading the sensor each second so there would be error value displayed most of the time
+        //when the sensor is sleeping        
+        if ( (node->is_low_power == 0) || ((node->is_low_power == 1) && (node->low_power_alive == 0)) )
+        {
+            //put ERROR value inside sensor's place
+            node->sensors[sensorNum]->uint_val = UINT_MAX;
+        }
     }
     else
     {
         //choose proper sensor value handle function (according to sensor type) from array of pointers to functions
-        (*countAndStoreSensorValue[nodeValues[nodeNum]->sensor_types[sensorNum] ])(nodeValues[nodeNum], sensorNum, (uchar*)&rawData, rawLen);
-        
-        //refresh the low_power alive interval (if it is low power node)
-        if (nodeValues[nodeNum]->is_low_power == 1) nodeValues[nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
+        (*countAndStoreSensorValue[nodeValues[nodeNum]->sensor_types[sensorNum] ])(nodeValues[nodeNum], sensorNum, (uchar*)&rawData, rawLen);        
     }
     mutexValues.unlock();
     
@@ -461,7 +468,9 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     }
     else
     {
-        printf("##!! ERR getting Node %d, sensor %d value\n", nodeNum,  sensorNum);
+        char low_power_str[20] = "";
+        if (nodeValues[nodeNum]->is_low_power == 1) sprintf(low_power_str, "(low power dev.)");
+        printf("##!! ERR getting Node %d, sensor %d value %s\n", nodeNum,  sensorNum, low_power_str);
         return -1;
     }
 }

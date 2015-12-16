@@ -120,10 +120,14 @@ int readConfigFiles(void)
                     memset((void*)nodeValues[node], 0, sizeof(NODE_VALUES_T) );
                     nodeValues[node]->node = node;
                     nodeValues[node]->num_sensors = numS;
+                    nodeValues[node]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT; //for all sensors (even not the low powered)
                     
                     for (int xxx=0; xxx < numS; xxx++)
                     {
-                        nodeValues[node]->sensor_types[xxx] = atoi(pole[xxx+2]);
+                        uchar sType = atoi(pole[xxx+2]);
+                        nodeValues[node]->sensor_types[xxx] = sType;
+                        //determine, if it is low power node
+                        if (sType >= LOW_POWER_NODE_SIGN) nodeValues[node]->is_low_power = 1; 
                     }
                     
                     freeArrayOfPointers((void***)&pole, poleLen);

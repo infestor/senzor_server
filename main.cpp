@@ -728,16 +728,43 @@ void threadProcessQueue(void)
                 //random interval 4-31sec to try it again
                 if ( (performUartValueReadAndSave(rec.nodeNum, rec.sensorNum) < 0) ) //&& (rec.intervalOk > 60)
                 {
-                    mutexIntervals.lock();
-                    if (sensorIntervals[rec.nodeNum] != NULL)
+                    //decide if normal node or low power node
+                    //for normal node choose random new interval
+                    //for low power node just decrease its alive interval by value in REC.INTERVAL (!! should be always 1sec for this type of node)
+                    if (nodeValues[rec.nodeNum]->is_low_power == 0)
                     {
-                        if (sensorIntervals[rec.nodeNum][rec.sensorNum].interval > 35)
+                        mutexIntervals.lock();
+                        if (sensorIntervals[rec.nodeNum] != NULL) //only for sensors with valid intervals record
                         {
-                            sensorIntervals[rec.nodeNum][rec.sensorNum].countDown = randr(4, 31);
-                            printf("Retry in %ds\n", sensorIntervals[rec.nodeNum][rec.sensorNum].countDown );
+                            if (sensorIntervals[rec.nodeNum][rec.sensorNum].interval > 35)
+                            {
+                                sensorIntervals[rec.nodeNum][rec.sensorNum].countDown = randr(4, 31);
+                                printf("Retry in %ds\n", sensorIntervals[rec.nodeNum][rec.sensorNum].countDown );
+                            }
                         }
+                        mutexIntervals.unlock();
                     }
-                    mutexIntervals.unlock();
+                    else
+                    {
+                        //low power device - decrease alive interval
+                        int temp_alive = nodeValues[rec.nodeNum]->low_power_alive;
+                        int temp_interval = sensorIntervals[rec.nodeNum][rec.sensorNum].interval;
+                        
+                        if (temp_interval > temp_alive)
+                        {
+                            temp_alive = 0;
+                        }
+                        else
+                        {
+                            temp_alive -= temp_interval;
+                        }
+                        nodeValues[rec.nodeNum]->low_power_alive = temp_alive;
+                    }
+                }
+                else
+                {
+                    //after success read - refresh the low_power alive interval (if it is low power node)
+                    if (nodeValues[rec.nodeNum]->is_low_power == 1) nodeValues[rec.nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
                 }
             }
             else if (rec.cmd == CMD_WRITE)
