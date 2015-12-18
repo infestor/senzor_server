@@ -432,14 +432,16 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     //there could not be any check whether the node and sensor exists during saving of new value
     //because this function is only called from inside program loop, where these
     //things were already checked
+
+    volatile NODE_VALUES_T *node = nodeValues[nodeNum];
+    uchar sensType = node->sensor_types[sensorNum];
+    if (sensType >= LOW_POWER_NODE_SIGN) sensType -= LOW_POWER_NODE_SIGN;
     
     mutexValues.lock();
     
     //test for FFFF value as a sign of error reading from node, so store error value to array
     if (result <= 0) //( (int32_t)*rawData == 0xFFFFFFFF)
     {
-        volatile NODE_VALUES_T *node = nodeValues[nodeNum];
-        
         //we must differ normal node and low power node
         //for low power device we leave last valid value until the ALIVE counter is bigger than 0
         //because we are reading the sensor each second so there would be error value displayed most of the time
@@ -453,7 +455,10 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     else
     {
         //choose proper sensor value handle function (according to sensor type) from array of pointers to functions
-        (*countAndStoreSensorValue[nodeValues[nodeNum]->sensor_types[sensorNum] ])(nodeValues[nodeNum], sensorNum, (uchar*)&rawData, rawLen);        
+        //but we have to take care of low power sensors (because they have number over 128 and that would
+        //exceed bounds of the array of value handling functions
+        //so we have to normalise the sensor type to 0-127
+        (*countAndStoreSensorValue[ sensType ])(node, sensorNum, (uchar*)&rawData, rawLen);        
     }
     mutexValues.unlock();
     
@@ -461,15 +466,15 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     {
         int valStrLen;
         uchar *valStr;
-        (*getSensorValStr[nodeValues[nodeNum]->sensor_types[sensorNum] ])(nodeValues[nodeNum], sensorNum, &valStr, &valStrLen);
+        (*getSensorValStr[ sensType ])(node, sensorNum, &valStr, &valStrLen);
         printf("## Node %d, sensor %d, value: %s\n", nodeNum,  sensorNum, valStr );
         free(valStr);
         return 1;
     }
     else
     {
-        char low_power_str[20] = "";
-        if (nodeValues[nodeNum]->is_low_power == 1) sprintf(low_power_str, "(low power dev.)");
+        char low_power_str[40] = "";
+        if (node->is_low_power == 1) sprintf(low_power_str, "(low pwr, alive:%d)", node->low_power_alive);
         printf("##!! ERR getting Node %d, sensor %d value %s\n", nodeNum,  sensorNum, low_power_str);
         return -1;
     }

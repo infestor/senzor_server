@@ -169,7 +169,7 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
         
         if (chyba == true)
         {
-            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR-PARSE]", 12);
+            appendToBuffer(outBuf, outLen, outBufPos, (uchar*)"<[ERR-PARSE]>", 13);
             
             return -1;
         }
@@ -229,7 +229,9 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
 			{
 				//use right type of sensor value (float or int..)!!
 				mutexValues.lock();
-				(*getSensorValStr[nodeValues[nodeNum]->sensor_types[nodeSens] ])(nodeValues[nodeNum], nodeSens, &sensorValStr, &sensorValStrLen);
+    			uchar sensType = nodeValues[nodeNum]->sensor_types[nodeSens];
+    			if (sensType >= LOW_POWER_NODE_SIGN) sensType -= LOW_POWER_NODE_SIGN;				
+				(*getSensorValStr[sensType ])(nodeValues[nodeNum], nodeSens, &sensorValStr, &sensorValStrLen);
 				mutexValues.unlock();
 			}
 			else //if the value vas never read from sensor, return X instead of value
@@ -746,19 +748,22 @@ void threadProcessQueue(void)
                     }
                     else
                     {
-                        //low power device - decrease alive interval
-                        int temp_alive = nodeValues[rec.nodeNum]->low_power_alive;
-                        int temp_interval = sensorIntervals[rec.nodeNum][rec.sensorNum].interval;
-                        
-                        if (temp_interval > temp_alive)
+                        //low power device and sensor - decrease alive interval
+                        if ( nodeValues[rec.nodeNum]->sensor_types[rec.sensorNum] >= LOW_POWER_NODE_SIGN)
                         {
-                            temp_alive = 0;
+							int temp_alive = nodeValues[rec.nodeNum]->low_power_alive;
+							int temp_interval = sensorIntervals[rec.nodeNum][rec.sensorNum].interval;
+						
+							if (temp_interval > temp_alive)
+							{
+								temp_alive = 0;
+							}
+							else
+							{
+								temp_alive -= temp_interval;
+							}
+							nodeValues[rec.nodeNum]->low_power_alive = temp_alive;
                         }
-                        else
-                        {
-                            temp_alive -= temp_interval;
-                        }
-                        nodeValues[rec.nodeNum]->low_power_alive = temp_alive;
                     }
                 }
                 else
