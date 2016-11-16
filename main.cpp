@@ -772,6 +772,8 @@ void threadProcessQueue(void)
                         {
 							int temp_alive = nodeValues[rec.nodeNum]->low_power_alive;
 							int temp_interval = sensorIntervals[rec.nodeNum][rec.sensorNum].interval;
+							//to decrease proper time in case that previously it wasnt only 1 sec
+							int temp_interval_before = temp_interval;
 
 							//decrease the auto-read interval from 60 to 1 sec after unsuccesful try
 							//we have to cover situation when it is only one-time triggered READ
@@ -781,13 +783,13 @@ void threadProcessQueue(void)
 							sensorIntervals[rec.nodeNum][rec.sensorNum].interval = temp_interval;
 							mutexIntervals.unlock();
 						
-							if (temp_interval > temp_alive)
+							if (temp_interval_before > temp_alive)
 							{
 								temp_alive = 0;
 							}
 							else
 							{
-								temp_alive -= temp_interval;
+								temp_alive -= temp_interval_before;
 							}
 							nodeValues[rec.nodeNum]->low_power_alive = temp_alive;
                         }
