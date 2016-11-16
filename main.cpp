@@ -700,6 +700,25 @@ void threadDecreaseIntervals(void)
 //=============================================================================
 //====== UART thread (reads and saves data in backgroud) =====================
 //=============================================================================
+void duplicateRecAgainToQueueIfPossible(THREAD_QUEUE_REC rec)
+{
+	if (rec.intervalErr > 0) //we have some more tryouts available
+	{
+	  rec.intervalErr -= 1;
+	  
+	  THREAD_QUEUE_REC newRec;
+	  newRec.nodeNum = rec.nodeNum;
+	  newRec.sensorNum = rec.sensorNum;
+	  newRec.sensorVal = rec.sensorVal;
+	  newRec.intervalErr = rec.intervalErr;
+	  
+	  //add again to self-queue with decreased max-try-counter
+	  mutexQueue.lock();
+	  threadQueue.push(newRec);
+	  mutexQueue.unlock();
+	}
+}
+
 void threadProcessQueue(void)
 {
     printf("## UART thread started..\n");
@@ -733,7 +752,7 @@ void threadProcessQueue(void)
                     //decide if normal node or low power node
                     //for normal node choose random new interval
                     //for low power node just decrease its alive interval by value in REC.INTERVAL (!! should be always 1sec for this type of node)
-                    if (nodeValues[rec.nodeNum]->is_low_power == 0)
+                    if (nodeValues[rec.nodeNum]->is_low_power == 0) //NORMAL powered
                     {
                         mutexIntervals.lock();
                         if (sensorIntervals[rec.nodeNum] != NULL) //only for sensors with valid intervals record
@@ -746,13 +765,21 @@ void threadProcessQueue(void)
                         }
                         mutexIntervals.unlock();
                     }
-                    else
+                    else //LOW powered
                     {
-                        //low power device and sensor - decrease alive interval
+                        //low power device AND sensor - decrease alive interval
                         if ( nodeValues[rec.nodeNum]->sensor_types[rec.sensorNum] >= LOW_POWER_NODE_SIGN)
                         {
 							int temp_alive = nodeValues[rec.nodeNum]->low_power_alive;
 							int temp_interval = sensorIntervals[rec.nodeNum][rec.sensorNum].interval;
+
+							//decrease the auto-read interval from 60 to 1 sec after unsuccesful try
+							//we have to cover situation when it is only one-time triggered READ
+							//and sensor is not in auto-reread queue. but this should not happen
+							if( temp_interval > 0) temp_interval = 1;
+							mutexIntervals.lock();
+							sensorIntervals[rec.nodeNum][rec.sensorNum].interval = temp_interval;
+							mutexIntervals.unlock();
 						
 							if (temp_interval > temp_alive)
 							{
@@ -766,10 +793,21 @@ void threadProcessQueue(void)
                         }
                     }
                 }
-                else
+                else //read was successful
                 {
-                    //after success read - refresh the low_power alive interval (if it is low power node)
-                    if (nodeValues[rec.nodeNum]->is_low_power == 1) nodeValues[rec.nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
+					//FOR LOW POWER DEVICES:
+                    //after success read - refresh the low_power alive interval
+					//and change interval to 60 secs, because now the device will sleep for approx 64 secs
+					//so it is not necessary to poll it every second for this period..
+					//but after it yes - change interval back to 1 sec and poll it until it responds
+                    if (nodeValues[rec.nodeNum]->is_low_power == 1)
+					{
+						nodeValues[rec.nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
+						mutexIntervals.lock();
+						sensorIntervals[rec.nodeNum][rec.sensorNum].interval = 60;
+						mutexIntervals.unlock();
+						//TODO: save even the last-valid-value timestamp to node values
+					}
                 }
             }
             else if (rec.cmd == CMD_WRITE)
@@ -778,21 +816,7 @@ void threadProcessQueue(void)
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
                 if ( writeUartSensorData(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
                 {
-                  if (rec.intervalErr > 0) //we have some more tryouts available
-                  {
-                      rec.intervalErr -= 1;
-                      
-                      THREAD_QUEUE_REC newRec;
-                      newRec.nodeNum = rec.nodeNum;
-                      newRec.sensorNum = rec.sensorNum;
-                      newRec.sensorVal = rec.sensorVal;
-                      newRec.intervalErr = rec.intervalErr;
-                      
-                      //add again to self-queue with decreased max-try-counter
-                      mutexQueue.lock();
-                      threadQueue.push(newRec);
-                      mutexQueue.unlock();
-                  }
+					duplicateRecAgainToQueueIfPossible(rec);
                 }
                 else //success writing
                 {
@@ -808,21 +832,7 @@ void threadProcessQueue(void)
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
                 if ( writeUartSensorCalib(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
                 {
-                  if (rec.intervalErr > 0) //we have some more tryouts available
-                  {
-                      rec.intervalErr -= 1;
-                      
-                      THREAD_QUEUE_REC newRec;
-                      newRec.nodeNum = rec.nodeNum;
-                      newRec.sensorNum = rec.sensorNum;
-                      newRec.sensorVal = rec.sensorVal;
-                      newRec.intervalErr = rec.intervalErr;
-                      
-                      //add again to self-queue with decreased max-try-counter
-                      mutexQueue.lock();
-                      threadQueue.push(newRec);
-                      mutexQueue.unlock();
-                  }
+					duplicateRecAgainToQueueIfPossible(rec);
                 }
                 //no need to do anything on success writing
             }
@@ -845,18 +855,7 @@ void threadProcessQueue(void)
                 {
                   if (rec.intervalErr > 0) //we have some more tryouts available
                   {
-                      rec.intervalErr -= 1;
-                      
-                      THREAD_QUEUE_REC newRec;
-                      newRec.nodeNum = rec.nodeNum;
-                      newRec.sensorNum = rec.sensorNum;
-                      newRec.sensorVal = rec.sensorVal;
-                      newRec.intervalErr = rec.intervalErr;
-                      
-                      //add again to self-queue with decreased max-try-counter
-                      mutexQueue.lock();
-                      threadQueue.push(newRec);
-                      mutexQueue.unlock();
+					duplicateRecAgainToQueueIfPossible(rec);
                   }
                   else
                   { //no more tryouts left.. end the command with fail
