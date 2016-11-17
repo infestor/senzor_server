@@ -700,17 +700,15 @@ void threadDecreaseIntervals(void)
 //=============================================================================
 //====== UART thread (reads and saves data in backgroud) =====================
 //=============================================================================
-void duplicateRecAgainToQueueIfPossible(THREAD_QUEUE_REC rec)
+void duplicateRecAgainToQueueIfPossible(volatile THREAD_QUEUE_REC *rec)
 {
-	if (rec.intervalErr > 0) //we have some more tryouts available
+	if (rec->intervalErr > 0) //we have some more tryouts available
 	{
-	  rec.intervalErr -= 1;
-	  
 	  THREAD_QUEUE_REC newRec;
-	  newRec.nodeNum = rec.nodeNum;
-	  newRec.sensorNum = rec.sensorNum;
-	  newRec.sensorVal = rec.sensorVal;
-	  newRec.intervalErr = rec.intervalErr;
+	  newRec.nodeNum = rec->nodeNum;
+	  newRec.sensorNum = rec->sensorNum;
+	  newRec.sensorVal = rec->sensorVal;
+	  newRec.intervalErr = rec->intervalErr - 1;
 	  
 	  //add again to self-queue with decreased max-try-counter
 	  mutexQueue.lock();
@@ -818,7 +816,7 @@ void threadProcessQueue(void)
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
                 if ( writeUartSensorData(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
                 {
-					duplicateRecAgainToQueueIfPossible(rec);
+					duplicateRecAgainToQueueIfPossible(&rec);
                 }
                 else //success writing
                 {
@@ -834,7 +832,7 @@ void threadProcessQueue(void)
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
                 if ( writeUartSensorCalib(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
                 {
-					duplicateRecAgainToQueueIfPossible(rec);
+					duplicateRecAgainToQueueIfPossible(&rec);
                 }
                 //no need to do anything on success writing
             }
@@ -857,7 +855,7 @@ void threadProcessQueue(void)
                 {
                   if (rec.intervalErr > 0) //we have some more tryouts available
                   {
-					duplicateRecAgainToQueueIfPossible(rec);
+					duplicateRecAgainToQueueIfPossible(&rec);
                   }
                   else
                   { //no more tryouts left.. end the command with fail
