@@ -665,6 +665,7 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
 //=============================================================================
 void threadDecreaseIntervals(void)
 {
+    printf("## QUEUE thread started..\n");
     while(1) {
 
         //cycle through intervalVect and decrease values by 1
@@ -962,10 +963,11 @@ int main(int argc, char ** argv)
         exit(10);
     }
     
-    printf("Starting background THREAD for handling UART comm\n");
-    std::thread threadUART(threadProcessQueue);
     printf("Starting background THREAD for decreasing countdowns in queue\n");
     std::thread threadCOUNTDOWN(threadDecreaseIntervals);
+	usleep(50000);
+    printf("Starting background THREAD for handling UART comm\n");
+    std::thread threadUART(threadProcessQueue);
         
     printf("\n");
 
