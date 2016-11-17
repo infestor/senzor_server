@@ -780,6 +780,7 @@ void threadProcessQueue(void)
 							if( temp_interval > 0) temp_interval = 1;
 							mutexIntervals.lock();
 							sensorIntervals[rec.nodeNum][rec.sensorNum].interval = temp_interval;
+							sensorIntervals[rec.nodeNum][rec.sensorNum].countDown = temp_interval;
 							mutexIntervals.unlock();
 						
 							if (temp_interval_before > temp_alive)
@@ -806,6 +807,7 @@ void threadProcessQueue(void)
 						nodeValues[rec.nodeNum]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT;
 						mutexIntervals.lock();
 						sensorIntervals[rec.nodeNum][rec.sensorNum].interval = 60;
+						sensorIntervals[rec.nodeNum][rec.sensorNum].countDown = 60;
 						mutexIntervals.unlock();
 						//TODO: save even the last-valid-value timestamp to node values
 					}
@@ -963,11 +965,11 @@ int main(int argc, char ** argv)
         exit(10);
     }
     
-    printf("Starting background THREAD for decreasing countdowns in queue\n");
-    std::thread threadCOUNTDOWN(threadDecreaseIntervals);
-	usleep(50000);
     printf("Starting background THREAD for handling UART comm\n");
     std::thread threadUART(threadProcessQueue);
+	//usleep(50000);
+    printf("Starting background THREAD for decreasing countdowns in queue\n");
+    std::thread threadCOUNTDOWN(threadDecreaseIntervals);
         
     printf("\n");
 
