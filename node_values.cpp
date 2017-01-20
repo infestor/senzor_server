@@ -55,6 +55,12 @@ void countBatteryVoltTwoCell STORE_VALUE_PARAMS
     nodeP->sensors[sensorNum]->float_val = volts;
 }
 
+void countLowPowerVcc STORE_VALUE_PARAMS
+{
+    int TReading = rawData[2];
+    nodeP->low_power_voltage = TReading * 20;
+}
+
 void getFloatValStr GET_VALUE_PARAMS
 {
     *strLen = asprintf( (char**)strBuf, "%.1f", nodeP->sensors[sensorNum]->float_val );

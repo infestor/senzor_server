@@ -94,7 +94,7 @@ int transceiveData(uchar *paket)
                 }
                 else
                 {
-                    usleep(10000);
+                    usleep(500);
                 }
             }
             
@@ -160,7 +160,7 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
     uchar buf[11];
     uchar c;
     
-    counted_timeout = timeout / 5;
+    counted_timeout = timeout;
     
     repeats_get = 0;
     klok = 0;
@@ -186,7 +186,7 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
                     }
                     else
                     {
-                        usleep(5000);
+                        usleep(1000);
                         klok++;
                         if (klok > counted_timeout)
                         {
@@ -224,7 +224,7 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
                 }
             } while (1);
         }
-        usleep(50000);
+        usleep(5000);
     } while( !((was_timeout==true) || (repeats_get > (repeats-1))) );
     return -1;
 }
@@ -458,7 +458,15 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
         //but we have to take care of low power sensors (because they have number over 128 and that would
         //exceed bounds of the array of value handling functions
         //so we have to normalise the sensor type to 0-127
-        (*countAndStoreSensorValue[ sensType ])(node, sensorNum, (uchar*)&rawData, rawLen);        
+        (*countAndStoreSensorValue[ sensType ])(node, sensorNum, (uchar*)&rawData, rawLen);
+
+        //now little addition - storing Vcc which comes along with DS18B20 value if low power sensor
+        //TODO: move this somewhere else (probably right to function that counts DS18b20 temp
+        if (node->is_low_power == 1) {
+        	if (sensType == TEPLOTA_DS1820) {
+        		countLowPowerVcc(node, sensorNum, (uchar*)&rawData, rawLen);
+        	}
+        }
     }
     mutexValues.unlock();
     
@@ -466,8 +474,11 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     {
         int valStrLen;
         uchar *valStr;
+        char low_power_str[40] = "";
+
         (*getSensorValStr[ sensType ])(node, sensorNum, &valStr, &valStrLen);
-        printf("## Node %d, sensor %d, value: %s\n", nodeNum,  sensorNum, valStr );
+        if (node->is_low_power == 1) sprintf(low_power_str, "(low pwr, Vcc = %.3f V)\n", (double)node->low_power_voltage / 1000.0);
+        printf("## Node %d, sensor %d, value: %s\n%s", nodeNum,  sensorNum, valStr, low_power_str );
         free(valStr);
         return 1;
     }

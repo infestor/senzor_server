@@ -66,6 +66,7 @@ typedef struct {
   uchar num_sensors;
   uchar is_low_power;
   uchar low_power_alive;
+  unsigned int low_power_voltage; //voltage sent along with low power DS18B20 value (it is stored as mV)
   uchar sensor_types[MAX_SENSORS]; //maximum number of sensors on one node
   volatile SENSOR_VAL_T* volatile *sensors; //pointer to array with values(union) size is num_sensors
   volatile unsigned long int sensor_read_times[MAX_SENSORS]; //timestamp of last valid reading from sensor
