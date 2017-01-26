@@ -1041,10 +1041,14 @@ int main(int argc, char ** argv)
         //accepting new socket connections (if any)
         if (incoming_conns < MAX_CONNS)
         {
-            int acceptResult = accept(socketfd, NULL, NULL);
-            if (acceptResult > 0)
+            int acceptResult;
+            bool socketAccepted = false;
+
+            while ( (incoming_conns < MAX_CONNS) && (acceptResult = accept(socketfd, NULL, NULL) > 0) )
             {
                 int incoming_sd;
+
+                socketAccepted = true;
                 incoming_sd = acceptResult;
                 printf("Connection accepted. Using new socketfd : %d\n", incoming_sd);
                 fcntl(incoming_sd, F_SETOWN, getpid());
@@ -1055,9 +1059,12 @@ int main(int argc, char ** argv)
                 send(incoming_sd, "[hello]\n", 8, 0);
                 incoming_conns++;
             }
+
+            //if some socked accepted - immediately return to begin of loop without sleeping, and poll incoming data
+            if (socketAccepted == true) continue;
         }
         
-        usleep(50000);
+        usleep(10000);
         
         //end of infinite program loop
         //tcflush(uart_fd, TCIOFLUSH); //we can only flush in separate thread, because only it can access uart
