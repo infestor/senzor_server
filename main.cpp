@@ -40,7 +40,7 @@ const char str_port_name_raspi[] = "/dev/ttyUSB0";
 //const char port_name[] = "/dev/tty.wchusbserialfd120";
 //const char port_name[] = "/dev/ttyAMA0";
 
-const char *druhy_senzoru[] = { "Vystup ZAP/VYP", "Teplota", "Dverni spinac ON/OFF", "Teplota procesoru",
+const char *druhy_senzoru_str[] = { "Vystup ZAP/VYP", "Teplota", "Dverni spinac ON/OFF", "Teplota procesoru",
     "Teplota DS1820", "Napeti baterie 1 clanek LION", "Napeti baterie 2 clanky LION" };
 const char low_power_str[] = "low power";
 
@@ -943,11 +943,11 @@ int main(int argc, char ** argv)
             {
                 if (node->sensor_types[x] >= LOW_POWER_NODE_SIGN)
                 {
-                    printf(" | %s (%s)", druhy_senzoru[ node->sensor_types[x]-LOW_POWER_NODE_SIGN ], low_power_str);
+                    printf(" | %s (%s)", druhy_senzoru_str[ node->sensor_types[x]-LOW_POWER_NODE_SIGN ], low_power_str);
                 }
                 else
                 {
-                    printf(" | %s", druhy_senzoru[ node->sensor_types[x] ]);
+                    printf(" | %s", druhy_senzoru_str[ node->sensor_types[x] ]);
                 }
                 
             }
@@ -987,24 +987,28 @@ int main(int argc, char ** argv)
                 {
                     if (ufds[ind].revents & POLLIN)
                     {
-                        uchar inBuff[255];
-                        memset(inBuff, 0, sizeof(inBuff) );
+                        uchar inBuff[500];
+                        //instead of memset all buffer to 0 before receive,
+                        //just set to 0 only byte laying right after received payload (like ending string with 0)
+                        //but do it after receive when len of incoming stored data is known
+                        //AND also do it after checking that len was not 0 or -1 which means error
+                        //this will save a lot of cpu time by not zeroing the buffer again and again
                         ssize_t len = recv(ufds[ind].fd, inBuff, sizeof(inBuff), 0);
                         //TODO : if incoming message is bigger than inBuff size, read it repeatedly with realloc to read all data
-                        if (len < 0)
+
+                        //if len was 0 or -1 that means either socket close or error
+                        //in both cases we must close the socket to get rid of it
+                        if (len < 1)
                         {
-                            printf("Socket error %d\n", errno);
-                            
-                        }
-                        else if (len ==0) //socket closed
-                        {
-                            printf("Socket Closed\n");
+                            if (len == -1) printf("Socket %d error (errno: %d)\n", ind, errno);
+                            printf("Socket %d closed\n", ind);
                             close(ufds[ind].fd);
                             removeUfd(ind); //remove this descriptor from queue
                             if (ind < incoming_conns) continue; //without increasing index
                         }
-                        else
+                        else //real data received and stored in buffer
                         {
+                            inBuff[len] = 0;
                             //printf("received %zd Bytes\n", len);
                             printf(">%s", inBuff);
                             uchar *outBuff;

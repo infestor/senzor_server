@@ -87,15 +87,19 @@ void cleanup(void)
         close(ufds[i].fd);
     }
     incoming_conns = 0;
+
+    //free stored sensor interval values (array is static, so just cycle through and set all values to NULL
+    //previously there was used function freeArrayOfPointers but it cannot be used
+    //since the array is static and it in fact does violation of memory access when it tries to free the array itself
+    //freeArrayOfPointers((void***)&sensorIntervals, MAX_NODES);
+    //and we will use for that the same cycle as for freeing node values because it also uses MAX_NODES as end
     
     //free stored node values
     for (int i = 0; i < MAX_NODES; i++)
     {
         freeNodeValStruct(&nodeValues[i]);
+        free((void *)sensorIntervals[i]);
     }
-
-    //free stored sensor interval values
-    freeArrayOfPointers((void***)&sensorIntervals, MAX_NODES);
 }
 
 void my_ctrl_handler(int s){

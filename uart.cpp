@@ -13,7 +13,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/ioctl.h>       
+#include <sys/ioctl.h>
 #include <limits.h>
 
 #include "main.h"
@@ -26,6 +26,7 @@ extern volatile uchar *nodeList;
 extern std::mutex mutexValues;
 extern std::mutex mutexIntervals;
 extern volatile uchar numNodes;
+extern const char *druhy_senzoru_str[];
 
 //=====================================================================================
 //==== UART related functions =========================================================
@@ -299,7 +300,8 @@ void revealNodes(void)
                 nodeValues[nodeNum]->sensor_names = (volatile uchar**) malloc( sizeof(uchar*) * MAX_SENSORS); //alloc array of pointers to user names of sensors
                 //int L;
                 for (int x = 0; x < node_specs.num_sensors; x++ ) {
-                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "unNamed_%d_%i", nodeNum, x) ); //fill all names with default values
+                    //fill all names with default values
+                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "node_%d_%i_%s", nodeNum, x, druhy_senzoru_str[nodeValues[nodeNum]->sensor_types[x]]) );
                     //the IF is there only to silence compiler warning of not using result value of asprintf function
                 }
                 //alloc num_sensors of value unions
@@ -324,7 +326,7 @@ void revealNodes(void)
                     //set interval for reading of values from sensor if it is DS1820 - set interval automatically to 60sec
                     if (nodeValues[nodeNum]->sensor_types[x] == TEPLOTA_DS1820)
                     {
-                        sensorIntervals[nodeNum][x].countDown = 1;                    
+                        sensorIntervals[nodeNum][x].countDown = 1;
                         sensorIntervals[nodeNum][x].interval = 60;
                         //prepare new record to be pushed to vector
                         SENSOR_INTERVAL_VECT_REC rec;
@@ -336,7 +338,7 @@ void revealNodes(void)
                     //set interval for reading of values from sensor if it is low powered DS1820 - set interval automatically to 1sec
                     else if (nodeValues[nodeNum]->sensor_types[x] == (TEPLOTA_DS1820 + LOW_POWER_NODE_SIGN) )
                     {
-                        sensorIntervals[nodeNum][x].countDown = 1;                    
+                        sensorIntervals[nodeNum][x].countDown = 1;
                         sensorIntervals[nodeNum][x].interval = 1;
                         //prepare new record to be pushed to vector
                         SENSOR_INTERVAL_VECT_REC rec;

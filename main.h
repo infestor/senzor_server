@@ -1,9 +1,12 @@
+#ifndef __MAIN_H__
+#define __MAIN_H__
+
 #include <sys/types.h>
 
-#define MAX_NODES 6 //can be changed up to 255
+#define MAX_NODES 10 //can be changed up to 255
 #define MAX_SENSORS 6 //cannot be changed - hard value
 #define MAX_SENSOR_NAME_LEN 30;
-#define MAX_CONNS 7 //can be changed to higher number
+#define MAX_CONNS 15 //can be changed to higher number
 
 //commands for thread
 #define CMD_NONE 0
@@ -84,10 +87,12 @@ typedef struct {
 } SENSOR_INTERVAL_REC;
 
 
+//----------------- FUNCTION PROTOTYPES -------------------------------
+
 #define STORE_VALUE_PARAMS (volatile NODE_VALUES_T *nodeP, uchar sensorNum, uchar *rawData, int rawLen)
 #define GET_VALUE_PARAMS (volatile NODE_VALUES_T *nodeP, uchar sensorNum, uchar **strBuf, int *strLen)
 
-//functions for handling sensor values
+//node_values.cpp - functions for handling sensor values
 void countDS1820Temp STORE_VALUE_PARAMS;
 void countInternalProcTemp STORE_VALUE_PARAMS;
 void decideOnOffValue STORE_VALUE_PARAMS;
@@ -128,3 +133,6 @@ void revealNodes(void);
 //cfg_files.cpp
 int saveConfigFiles(void);
 int readConfigFiles(void);
+
+#endif //__MAIN_H__
+
