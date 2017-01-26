@@ -36,7 +36,7 @@ struct pollfd ufds[MAX_CONNS];
 //#define DEBUG
 
 const char str_port_name[] = "/dev/tty.wchusbserialfa130";
-const char str_port_name_raspi[] = "/dev/ttyUSB0";
+const char str_port_name_raspi[] = "/dev/ttyUSB1";
 //const char port_name[] = "/dev/tty.wchusbserialfd120";
 //const char port_name[] = "/dev/ttyAMA0";
 
@@ -232,6 +232,48 @@ int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos
     			uchar sensType = nodeValues[nodeNum]->sensor_types[nodeSens];
     			if (sensType >= LOW_POWER_NODE_SIGN) sensType -= LOW_POWER_NODE_SIGN;				
 				(*getSensorValStr[sensType ])(nodeValues[nodeNum], nodeSens, &sensorValStr, &sensorValStrLen);
+				mutexValues.unlock();
+			}
+			else //if the value vas never read from sensor, return X instead of value
+			{
+				sensorValStrLen = asprintf((char**)&sensorValStr, "x");
+			}
+
+			L = asprintf((char**)&outMsg, "<[OK]%s[%s]>", cmd, sensorValStr);
+			free(sensorValStr);
+			appendToBuffer(outBuf, outLen, outBufPos, outMsg, L);
+			free(outMsg);
+			printf(">OK: %s\n", cmd);
+		}
+        //if chyba was true, print [ERR] tag at the end - common for all commands
+
+    }
+    //=== getVcc command [getVal:nodeNum] (must be low power node)
+    else if (strncmp((const char*)cmd, "[getVcc:", 8) == 0)
+    {
+    	uchar nodeNum;
+
+    	chyba = parseCommandArguments(cmd, cmdLen, 1, (int*)&nodeNum, NULL, NULL);
+        
+    	if (chyba == false) {
+            //is the request for existing Node?
+            if ( (nodeValues[nodeNum] == NULL) || (nodeValues[nodeNum]->is_low_power == 0) ) chyba = true;
+    	}
+
+		uchar *outMsg;
+		int L;
+		if (chyba == false)
+		{
+			uchar *sensorValStr;
+			int sensorValStrLen;
+
+			//decide if the value vas ever read from real sensor
+			//bcause on initialisation the union of value is filled by 0xFF
+			if (nodeValues[nodeNum]->low_power_voltage != UINT_MAX)
+			{
+				//use right type of sensor value (float or int..)!!
+				mutexValues.lock();
+				sensorValStrLen = asprintf( (char**)&sensorValStr, "%d", nodeValues[nodeNum]->low_power_voltage );
 				mutexValues.unlock();
 			}
 			else //if the value vas never read from sensor, return X instead of value
@@ -1000,8 +1042,8 @@ int main(int argc, char ** argv)
                         //in both cases we must close the socket to get rid of it
                         if (len < 1)
                         {
-                            if (len == -1) printf("Socket %d error (errno: %d)\n", ind, errno);
-                            printf("Socket %d closed\n", ind);
+                            if (len == -1) printf("Socket %d error (errno: %d)\n", ufds[ind].fd, errno);
+                            printf("Socket %d closed\n", ufds[ind].fd);
                             close(ufds[ind].fd);
                             removeUfd(ind); //remove this descriptor from queue
                             if (ind < incoming_conns) continue; //without increasing index
@@ -1041,15 +1083,12 @@ int main(int argc, char ** argv)
         //accepting new socket connections (if any)
         if (incoming_conns < MAX_CONNS)
         {
-            int acceptResult;
             bool socketAccepted = false;
-
-            while ( (incoming_conns < MAX_CONNS) && (acceptResult = accept(socketfd, NULL, NULL) > 0) )
+			volatile int incoming_sd = accept(socketfd, NULL, NULL);
+			
+            while ( (incoming_conns < MAX_CONNS) && (incoming_sd > 0 ) )
             {
-                int incoming_sd;
-
                 socketAccepted = true;
-                incoming_sd = acceptResult;
                 printf("Connection accepted. Using new socketfd : %d\n", incoming_sd);
                 fcntl(incoming_sd, F_SETOWN, getpid());
                 int flags = fcntl(incoming_sd, F_GETFL, 0);
@@ -1058,6 +1097,8 @@ int main(int argc, char ** argv)
                 ufds[incoming_conns].events = POLLIN | POLLHUP;
                 send(incoming_sd, "[hello]\n", 8, 0);
                 incoming_conns++;
+
+            	incoming_sd = accept(socketfd, NULL, NULL);
             }
 
             //if some socked accepted - immediately return to begin of loop without sleeping, and poll incoming data

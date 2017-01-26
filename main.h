@@ -98,7 +98,7 @@ void countInternalProcTemp STORE_VALUE_PARAMS;
 void decideOnOffValue STORE_VALUE_PARAMS;
 void countBatteryVoltOneCell STORE_VALUE_PARAMS;
 void countBatteryVoltTwoCell STORE_VALUE_PARAMS;
-
+void countLowPowerVcc STORE_VALUE_PARAMS;
 void getFloatValStr GET_VALUE_PARAMS;
 void getIntValStr GET_VALUE_PARAMS;
 void getUintValStr GET_VALUE_PARAMS;

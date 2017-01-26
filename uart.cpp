@@ -301,8 +301,9 @@ void revealNodes(void)
                 //int L;
                 for (int x = 0; x < node_specs.num_sensors; x++ ) {
                     //fill all names with default values
-                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "node_%d_%i_%s", nodeNum, x, druhy_senzoru_str[nodeValues[nodeNum]->sensor_types[x]]) );
                     //the IF is there only to silence compiler warning of not using result value of asprintf function
+                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "node_%d_%i_%s", nodeNum, x, druhy_senzoru_str[nodeValues[nodeNum]->sensor_types[x]]) );
+                    ; //and to silence mac compiler, semicolon must be on other line than IF statement
                 }
                 //alloc num_sensors of value unions
                 nodeValues[nodeNum]->sensors = (volatile SENSOR_VAL_T**) malloc( sizeof(SENSOR_VAL_T*) * node_specs.num_sensors);  //alloc array of pointers to sensors values
@@ -448,10 +449,15 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
         //for low power device we leave last valid value until the ALIVE counter is bigger than 0
         //because we are reading the sensor each second so there would be error value displayed most of the time
         //when the sensor is sleeping        
-        if ( (node->is_low_power == 0) || ((node->is_low_power == 1) && (node->low_power_alive == 0)) )
+        if ( (node->is_low_power == 0) )
         {
             //put ERROR value inside sensor's place
             node->sensors[sensorNum]->uint_val = UINT_MAX;
+        }
+        else if ((node->is_low_power == 1) && (node->low_power_alive == 0))
+        {   //for low power sensor the same
+            node->sensors[sensorNum]->uint_val = UINT_MAX;
+            node->low_power_voltage = UINT_MAX;
         }
     }
     else

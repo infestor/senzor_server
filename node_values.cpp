@@ -58,6 +58,14 @@ void countBatteryVoltTwoCell STORE_VALUE_PARAMS
 void countLowPowerVcc STORE_VALUE_PARAMS
 {
     int TReading = rawData[2];
+    printf("Raw Vcc value: %d\n", TReading);
+    //smart hack - if the value is very low it probably means that it in fact
+    //overflowed 255 on the node during computation
+    //and also it means that measured voltage was over 5.0X Volts
+    //so we will smartly add those 255 to TReading
+    //normally the lower value the lower voltage and 1.1V reference means value 55
+    //so if it is lower than 50 we can assume overflow
+    if (TReading < 50) TReading += 256;
     nodeP->low_power_voltage = TReading * 20;
 }
 
