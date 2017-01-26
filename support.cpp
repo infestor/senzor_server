@@ -177,7 +177,7 @@ int removeUfd(uchar ind)
     }
     else
     {
-        for (uchar pos = ind; pos < (incoming_conns-2); pos++)
+        for (uchar pos = ind; pos <= (incoming_conns-2); pos++)
         {
             ufds[pos] = ufds[pos+1];
         }
