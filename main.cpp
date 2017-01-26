@@ -1084,9 +1084,9 @@ int main(int argc, char ** argv)
         if (incoming_conns < MAX_CONNS)
         {
             bool socketAccepted = false;
-			volatile int incoming_sd = accept(socketfd, NULL, NULL);
+			volatile int incoming_sd;
 			
-            while ( (incoming_conns < MAX_CONNS) && (incoming_sd > 0 ) )
+            while ( (incoming_sd = accept(socketfd, NULL, NULL)) > 0 )
             {
                 socketAccepted = true;
                 printf("Connection accepted. Using new socketfd : %d\n", incoming_sd);
@@ -1098,7 +1098,7 @@ int main(int argc, char ** argv)
                 send(incoming_sd, "[hello]\n", 8, 0);
                 incoming_conns++;
 
-            	incoming_sd = accept(socketfd, NULL, NULL);
+            	if (incoming_conns == MAX_CONNS) break;
             }
 
             //if some socked accepted - immediately return to begin of loop without sleeping, and poll incoming data
