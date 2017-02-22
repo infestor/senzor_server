@@ -21,7 +21,8 @@ extern std::vector<SENSOR_INTERVAL_VECT_REC> intervalVect;
 //=============================================================================
 int saveConfigFiles(void)
 {
-    FILE *fdIntervals, *fdParams = nullptr;
+    FILE *fdIntervals;
+    FILE *fdParams = NULL;
     bool openSucc = false;
 
     //try to open files for write
@@ -85,7 +86,7 @@ int saveConfigFiles(void)
 
 int readConfigFiles(void)
 {
-    FILE *fd = nullptr;
+    FILE *fd = NULL;
     const char *fname;
     
     //first read sensor params file
@@ -121,7 +122,7 @@ int readConfigFiles(void)
                     nodeValues[node]->node = node;
                     nodeValues[node]->num_sensors = numS;
                     nodeValues[node]->low_power_alive = LOW_POWER_ALIVE_TIMEOUT; //for all sensors (even not the low powered)
-                    
+
                     for (int xxx=0; xxx < numS; xxx++)
                     {
                         uchar sType = atoi(pole[xxx+2]);
@@ -129,16 +130,19 @@ int readConfigFiles(void)
                         //determine, if it is low power node
                         if (sType >= LOW_POWER_NODE_SIGN) nodeValues[node]->is_low_power = 1; 
                     }
-                    
+
                     freeArrayOfPointers((void***)&pole, poleLen);
-                    
+
                     nodeValues[node]->sensors = (volatile SENSOR_VAL_T**) malloc( sizeof(SENSOR_VAL_T*) * numS);  //alloc array of pointers to sensors values
+                    nodeValues[node]->last_valid_values = (volatile SENSOR_VAL_T**) malloc( sizeof(SENSOR_VAL_T*) * numS); //the same for last_valid_values array
                     for (int x = 0; x < numS; x++ ) //alloc sensor val structures
                     {
                         nodeValues[node]->sensors[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
                         memset((void*)nodeValues[node]->sensors[x], 255, sizeof(SENSOR_VAL_T) );
+                        nodeValues[node]->last_valid_values[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
+                        memset((void*)nodeValues[node]->last_valid_values[x], 255, sizeof(SENSOR_VAL_T) );
                     }
-                    
+
                     nodeValues[node]->sensor_names = (volatile uchar**) malloc( sizeof(uchar*) * MAX_SENSORS); //alloc array of
                     memset((void*)nodeValues[node]->sensor_names, 0, sizeof(char*) * MAX_SENSORS);
                     for (int xxx=0; xxx < numS; xxx++)
@@ -166,7 +170,7 @@ int readConfigFiles(void)
                 L = 0;
             }
             fclose(fd);
-            
+
             //copy only valid values from temporary list to normal list (clearing the original list before)
             if (numNodes > 0) //only if there are nodes
             {
@@ -183,7 +187,7 @@ int readConfigFiles(void)
     {
         printf("File %s does not exist\n", fname);
     }
-    
+
     //second read sensor intervals file
     //try if file exists and try to open for reading
     fname = "intervals.cfg";

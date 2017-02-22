@@ -302,23 +302,26 @@ void revealNodes(void)
                 for (int x = 0; x < node_specs.num_sensors; x++ ) {
                     //fill all names with default values
                     //the IF is there only to silence compiler warning of not using result value of asprintf function
-                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "node_%d_%i_%s", nodeNum, x, druhy_senzoru_str[nodeValues[nodeNum]->sensor_types[x]]) );
+                    if ( asprintf((char**)&(nodeValues[nodeNum]->sensor_names[x]), "node_%d_%i_%s", nodeNum, x, druhy_senzoru_str[nodeValues[nodeNum]->sensor_types[x]]) )
                     ; //and to silence mac compiler, semicolon must be on other line than IF statement
                 }
                 //alloc num_sensors of value unions
                 nodeValues[nodeNum]->sensors = (volatile SENSOR_VAL_T**) malloc( sizeof(SENSOR_VAL_T*) * node_specs.num_sensors);  //alloc array of pointers to sensors values
+                nodeValues[nodeNum]->last_valid_values = (volatile SENSOR_VAL_T**) malloc( sizeof(SENSOR_VAL_T*) * node_specs.num_sensors);  //alloc array of pointers to sensors values
                 //alloc also intervals structure for this node and init it to 0
                 mutexIntervals.lock();
                 if (sensorIntervals[nodeNum] == NULL)
                 {
                     sensorIntervals[nodeNum] = (SENSOR_INTERVAL_REC *) malloc(sizeof(SENSOR_INTERVAL_REC) * MAX_SENSORS);
                     memset((void*)sensorIntervals[nodeNum], 0, sizeof(SENSOR_INTERVAL_REC) * MAX_SENSORS);
-                }               
+                }
                 //alloc sensor val structures
                 for (int x = 0; x < node_specs.num_sensors; x++ ) 
                 {
                     nodeValues[nodeNum]->sensors[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
                     memset((void*)nodeValues[nodeNum]->sensors[x], 255, sizeof(SENSOR_VAL_T) );
+                    nodeValues[nodeNum]->last_valid_values[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
+                    memset((void*)nodeValues[nodeNum]->last_valid_values[x], 255, sizeof(SENSOR_VAL_T) );
                     
                     //determine if node is low powered - if any sensor has vylue bigger than 128
                     //that means low power node
@@ -467,6 +470,10 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
         //exceed bounds of the array of value handling functions
         //so we have to normalise the sensor type to 0-127
         (*countAndStoreSensorValue[ sensType ])(node, sensorNum, (uchar*)&rawData, rawLen);
+
+        //store also last alive related informations
+        node->sensor_read_times[sensorNum] = time(NULL);
+        copySensorValueToLastValid(node, sensorNum);
 
         //now little addition - storing Vcc which comes along with DS18B20 value if low power sensor
         //TODO: move this somewhere else (probably right to function that counts DS18b20 temp

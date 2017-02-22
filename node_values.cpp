@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "main.h"
 
 extern const double TempCorrections[];
@@ -87,4 +88,9 @@ void getUintValStr GET_VALUE_PARAMS
 void getUcharValStr GET_VALUE_PARAMS
 {
     *strLen = asprintf( (char**)strBuf, "%d", nodeP->sensors[sensorNum]->uchar_val );
+}
+
+void copySensorValueToLastValid(volatile NODE_VALUES_T* node, uchar sensorNum)
+{
+	memcpy((void*)node->last_valid_values[sensorNum], (const void*)node->sensors[sensorNum], sizeof(SENSOR_VAL_T));
 }

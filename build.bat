@@ -1,4 +1,4 @@
-"c:\Honza\RaspberryChain\bin\arm-linux-gnueabihf-g++.exe" -Wall -std=gnu++0x -O3 -ggdb -pthread -lpthread -shared-libgcc -fno-use-linker-plugin -march=armv6zk -mcpu=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp main.cpp support.cpp cfg_files.cpp uart.cpp node_values.cpp -o server
+"c:\Honza\RaspberryChain\bin\arm-linux-gnueabihf-g++.exe" -Wall -std=gnu++0x -O3 -ggdb -pthread -lpthread -shared-libgcc -fno-use-linker-plugin -march=armv6zk -mcpu=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp main.cpp process_sock_cmd.cpp support.cpp cfg_files.cpp uart.cpp node_values.cpp -o server
 @rem -march=armv6 -mfpu=vfp -mfloat-abi=hard
-@rem "c:\Honza\RaspberryChain\bin\arm-linux-gnueabihf-g++.exe" -Wall -std=gnu++0x -O3 -g0 -s -pthread -lpthread -shared-libgcc -fno-use-linker-plugin main.cpp support.cpp cfg_files.cpp uart.cpp node_values.cpp -o server
+@rem "c:\Honza\RaspberryChain\bin\arm-linux-gnueabihf-g++.exe" -Wall -std=gnu++0x -O3 -g0 -s -pthread -lpthread -shared-libgcc -fno-use-linker-plugin main.cpp process_sock_cmd.cppsupport.cpp cfg_files.cpp uart.cpp node_values.cpp -o server
 @rem "bin\arm-linux-gnueabihf-g++.exe" -Wall -O0 -s -g0 -ggdb -g3 -fno-use-linker-plugin main.cpp -o server_debug

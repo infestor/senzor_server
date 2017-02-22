@@ -1,5 +1,5 @@
 #ifndef __MAIN_H__
-#define __MAIN_H__
+#define __MAIN_H__ 1
 
 #include <sys/types.h>
 
@@ -61,7 +61,7 @@ typedef union {
   uchar uchar_val;
   int int_val;
   unsigned int uint_val;
-  uchar stream[sizeof(double)];  
+  uchar stream[sizeof(double)];
 } SENSOR_VAL_T;
 
 typedef struct {
@@ -72,7 +72,8 @@ typedef struct {
   unsigned int low_power_voltage; //voltage sent along with low power DS18B20 value (it is stored as mV)
   uchar sensor_types[MAX_SENSORS]; //maximum number of sensors on one node
   volatile SENSOR_VAL_T* volatile *sensors; //pointer to array with values(union) size is num_sensors
-  volatile unsigned long int sensor_read_times[MAX_SENSORS]; //timestamp of last valid reading from sensor
+  volatile SENSOR_VAL_T* volatile *last_valid_values; //pointer to array with pointers to last valid read values(union)
+  volatile time_t sensor_read_times[MAX_SENSORS]; //timestamp of last valid reading from sensor
   volatile uchar* volatile *sensor_names; //user defined names of particular sensors
 } NODE_VALUES_T;
 
@@ -85,6 +86,16 @@ typedef struct {
     int interval;
     int countDown;
 } SENSOR_INTERVAL_REC;
+
+//this is for queue of UART data transfer separate thread
+typedef struct {
+    uchar cmd;
+    uchar nodeNum;
+    uchar sensorNum;
+    int sensorVal;
+    int intervalOk;
+    int intervalErr;
+} THREAD_QUEUE_REC;
 
 
 //----------------- FUNCTION PROTOTYPES -------------------------------
@@ -103,6 +114,7 @@ void getFloatValStr GET_VALUE_PARAMS;
 void getIntValStr GET_VALUE_PARAMS;
 void getUintValStr GET_VALUE_PARAMS;
 void getUcharValStr GET_VALUE_PARAMS;
+void copySensorValueToLastValid(volatile NODE_VALUES_T* node, uchar sensorNum);
 
 //defined and initialised in main.cpp
 extern void (*countAndStoreSensorValue[]) STORE_VALUE_PARAMS;
@@ -133,6 +145,13 @@ void revealNodes(void);
 //cfg_files.cpp
 int saveConfigFiles(void);
 int readConfigFiles(void);
+
+//process_sock_cmd.cpp
+//main function to parse and respond to socket message
+//unfortunately I did it as one veery big function
+//so I put that in separate file not to mess main.cpp file
+int processSockCmd(uchar *inBuff, ssize_t bufLen, uchar **outBuf, int *outBufPos, int *outLen);
+bool parseCommandArguments(uchar *cmd, uchar cmdLen, uchar numParams, int *param1, int *param2, int *param3);
 
 #endif //__MAIN_H__
 
