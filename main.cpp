@@ -47,7 +47,8 @@ const char low_power_str[] = "low power";
 //to undefined reference linker error (because other files still needed it)
 
 const char str_port_name[] = "/dev/tty.wchusbserialfa130";
-const char str_port_name_raspi[] = "/dev/ttyUSB1";
+const char str_port_name_raspi[] = "/dev/ttyUSB0";
+const char str_port_name_raspi1[] = "/dev/ttyUSB1";
 //const char port_name[] = "/dev/tty.wchusbserialfd120";
 //const char port_name[] = "/dev/ttyAMA0";
 
@@ -337,8 +338,12 @@ int main(int argc, char ** argv)
         printf("Trying UART port on RASPBERRY (%s)\n", str_port_name_raspi);
         if (setup_uart(str_port_name_raspi) == -1)
         {
-            printf("Cannot open neither MAC nor Raspi UART port!\n");
-            return -1;
+			printf("Trying UART port on RASPBERRY (%s)\n", str_port_name_raspi1);
+			if (setup_uart(str_port_name_raspi) == -1)
+			{
+				printf("Cannot open neither MAC nor Raspi UART port!\n");
+				return -1;
+			}
         }
     }
     printf("UART Port opened..\n");
