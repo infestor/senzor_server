@@ -104,7 +104,7 @@ void getUcharValStr GET_VALUE_PARAMS
 
 void getPwmValStr GET_VALUE_PARAMS
 {
-	asprintf((char**)strBuf, "%d,", *strBuf, nodeP->sensors[sensorNum]->pwm_vals.value[1]);
+	asprintf((char**)strBuf, "%d,", nodeP->sensors[sensorNum]->pwm_vals.value[1]);
 
 	for (unsigned int i = 1; i < nodeP->sensors[sensorNum]->pwm_vals.num_channels; i++)
 	{
