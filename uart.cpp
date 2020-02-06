@@ -52,8 +52,8 @@ int setup_uart(const char *port_name)
     
     options.c_cc[VMIN] = 0;
     options.c_cc[VTIME] = 0;
-    cfsetispeed(&options, B1000000); //B57600);
-    cfsetospeed(&options, B1000000); //B57600);
+    cfsetispeed(&options, B2000000); //B57600);
+    cfsetospeed(&options, B2000000); //B57600);
     
     tcsetattr(uart_fd, TCSANOW, &options);
     
