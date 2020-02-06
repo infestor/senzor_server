@@ -25,6 +25,8 @@
 #define TEPLOTA_DS1820 4
 #define NAPETI_BATERIE_1_CLANEK 5
 #define NAPETI_BATERIE_2_CLANKY 6
+#define PWM_1_CHANNEL 7
+#define PWM_3_CHANNEL 8
 
 #define LOW_POWER_ALIVE_TIMEOUT 255
 
@@ -56,12 +58,18 @@ typedef struct {
     uchar sensors[MAX_SENSORS];
 } NodeSpecsT;
 
+typedef struct {
+	uchar value[4];
+	uchar num_channels;
+} PwmOneToFourBytesT;
+
 typedef union {
   double float_val;
   uchar uchar_val;
   int int_val;
   unsigned int uint_val;
   uchar stream[sizeof(double)];
+  PwmOneToFourBytesT pwm_vals;
 } SENSOR_VAL_T;
 
 typedef struct {
@@ -110,10 +118,13 @@ void decideOnOffValue STORE_VALUE_PARAMS;
 void countBatteryVoltOneCell STORE_VALUE_PARAMS;
 void countBatteryVoltTwoCell STORE_VALUE_PARAMS;
 void countLowPowerVcc STORE_VALUE_PARAMS;
+void storePwmValsOneToFourBytes STORE_VALUE_PARAMS;
+
 void getFloatValStr GET_VALUE_PARAMS;
 void getIntValStr GET_VALUE_PARAMS;
 void getUintValStr GET_VALUE_PARAMS;
 void getUcharValStr GET_VALUE_PARAMS;
+void getPwmValStr GET_VALUE_PARAMS;
 void copySensorValueToLastValid(volatile NODE_VALUES_T* node, uchar sensorNum);
 
 //defined and initialised in main.cpp

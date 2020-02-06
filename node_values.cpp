@@ -70,6 +70,18 @@ void countLowPowerVcc STORE_VALUE_PARAMS
     nodeP->low_power_voltage = TReading * 20;
 }
 
+void storePwmValsOneToFourBytes STORE_VALUE_PARAMS
+{
+	//For PWM sensors, which return value as 1 byte for each channel (1-4 bytes total)
+	//The value does not need anyy conversion, so just copy proper number of received bytes
+	//into the pwm_vals struct in union structure
+	for (int i = 0; i < rawLen; i++)
+	{
+		nodeP->sensors[sensorNum]->pwm_vals.value[i] = rawData[i];
+	}
+	nodeP->sensors[sensorNum]->pwm_vals.num_channels = rawLen;
+}
+
 void getFloatValStr GET_VALUE_PARAMS
 {
     *strLen = asprintf( (char**)strBuf, "%.1f", nodeP->sensors[sensorNum]->float_val );
@@ -88,6 +100,16 @@ void getUintValStr GET_VALUE_PARAMS
 void getUcharValStr GET_VALUE_PARAMS
 {
     *strLen = asprintf( (char**)strBuf, "%d", nodeP->sensors[sensorNum]->uchar_val );
+}
+
+void getPwmValStr GET_VALUE_PARAMS
+{
+	asprintf((char**)strBuf, "%d,", *strBuf, nodeP->sensors[sensorNum]->pwm_vals.value[1]);
+
+	for (unsigned int i = 1; i < nodeP->sensors[sensorNum]->pwm_vals.num_channels; i++)
+	{
+		*strLen = asprintf((char**)strBuf, "%s,%d,", *strBuf, nodeP->sensors[sensorNum]->pwm_vals.value[i]);
+	}
 }
 
 void copySensorValueToLastValid(volatile NODE_VALUES_T* node, uchar sensorNum)

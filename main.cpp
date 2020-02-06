@@ -38,7 +38,8 @@ struct pollfd ufds[MAX_CONNS];
 //----------------- CONSTANTS -----------------------------------------
 const char *druhy_senzoru_str[] = {
     "Vystup ZAP/VYP", "Teplota", "Dverni spinac ON/OFF", "Teplota procesoru",
-    "Teplota DS1820", "Napeti baterie 1 clanek LION", "Napeti baterie 2 clanky LION" };
+    "Teplota DS1820", "Napeti baterie 1 clanek LION", "Napeti baterie 2 clanky LION",
+	"PWM 1 Channel", "PWM 3 channels"};
 const char low_power_str[] = "low power";
 
 //const uchar sensorReturnLen[] = {1, 2, 1, 1, 2, 2, 2};
@@ -66,15 +67,17 @@ volatile uchar numNodes = 0;
 //these functions process raw sensor data and stores them to nodeValues
 //this is needed to handle different data types in every sensor
 //parameters of all functions (NODE_VALUES_T *nodeP, uchar sensorNum, uchar *rawData, int rawLen)
+//INFO - positions in array coresponds to sensor type defines
 void (*countAndStoreSensorValue[]) STORE_VALUE_PARAMS = \
-{decideOnOffValue, NULL, decideOnOffValue, countInternalProcTemp, countDS1820Temp, countBatteryVoltOneCell, countBatteryVoltTwoCell};
+{decideOnOffValue, NULL, decideOnOffValue, countInternalProcTemp, countDS1820Temp, countBatteryVoltOneCell, countBatteryVoltTwoCell, storePwmValsOneToFourBytes, storePwmValsOneToFourBytes};
 
 //array of pointers to functions
 //these functions get sensor value from nodeValues and convert it to string in brackets, example [value_in_string_form] [1] [24.4]
 //according to sensor type
 //string is allocated inside function, so there is need to free it after use !!!
+//INFO - positions in array coresponds to sensor type defines
 void (*getSensorValStr[]) GET_VALUE_PARAMS = \
-{getIntValStr, NULL, getIntValStr, getFloatValStr, getFloatValStr, getFloatValStr, getFloatValStr};
+{getIntValStr, NULL, getIntValStr, getFloatValStr, getFloatValStr, getFloatValStr, getFloatValStr, getPwmValStr, getPwmValStr};
 
 //array for storing information, how often read which sensor value over UART
 //both these vectors must always be the same size!!
@@ -339,7 +342,7 @@ int main(int argc, char ** argv)
         if (setup_uart(str_port_name_raspi) == -1)
         {
 			printf("Trying UART port on RASPBERRY (%s)\n", str_port_name_raspi1);
-			if (setup_uart(str_port_name_raspi) == -1)
+			if (setup_uart(str_port_name_raspi1) == -1)
 			{
 				printf("Cannot open neither MAC nor Raspi UART port!\n");
 				return -1;
