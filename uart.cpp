@@ -3,6 +3,7 @@
 #include <queue>
 #include <thread>
 #include <mutex>
+#include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,92 +124,6 @@ int transmitData(uchar *paket)
     }
 }
 
-
-int transceiveData_old(uchar *paket)
-{
-    ssize_t n;
-    int i, repeats_send;
-    uchar buf[3];
-    uchar c;
-    bool respReceived;
-    
-    repeats_send = 1;
-    //tcflush(uart_fd, TCIOFLUSH);
-    do
-    {
-        n = write(uart_fd, (void*)paket, 12);
-        if (n < 0) {
-            return -1;
-        }
-        
-        respReceived = false;
-        do
-        {
-            i = 0;
-            memset(&buf, 0, sizeof(buf) );
-            //tcflush(uart_fd, TCIFLUSH);
-            while(i < 2) {
-                n = read(uart_fd, (void*)&c, 1);
-                if (n>0)
-                {
-                    buf[i] = c;
-                    i++;
-                }
-                else
-                {
-                    usleep(500);
-                }
-            }
-            
-            buf[2] = 0;
-#ifdef DEBUG
-            printf("Vysledek: %s\n", buf);
-#endif
-            if ( strncmp((char*)buf, "OK", 2) != 0)
-            {
-                //eliminujeme nacteni realneho paketu tim ze ho rozpozname
-                if ( (strncmp((char*)buf, "ER", 2) != 0) && (strncmp((char*)buf, "TO", 2) != 0) )
-                {
-                    //neni to odpoved na send paket, takze jsou to prvni 2 bajty z realneho paketu
-                    //ten nepotrebujem, protoze zrejme prisel nejak opozdene, tudiz nactem zbylych 9 bajtu
-                    //a tim se v bufferu posuneme na zacatek dalsiho mozneho paketu/potvrzeni
-                    uchar u = 0;
-                    do
-                    {
-                        n = read(uart_fd, (void*)&c, 1);
-                        if (n > 0) {
-                            u++;
-                        }
-                        else
-                        {
-                            usleep(500);
-                        }
-                    } while (u < 9);
-#ifdef DEBUG
-                    printf("wrong ack\n");
-#endif
-                }
-                else //TO or ER received
-                {
-                    break;
-                }
-            }
-            else
-            {
-                respReceived = true;
-            }
-        } while(respReceived == false);
-        
-        if (respReceived == true) break;
-        if (repeats_send > 0) return -1; //prilis mnoho pokusu o odeslani
-        repeats_send++;
-        usleep(50000);
-    }
-    while( 1 );
-    
-    return 1;
-}
-
 //----------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------
 int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout, unsigned int repeats)
@@ -266,88 +181,6 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
 	if (timeout_internal == 0) {return -10;} //timeout occured
 	return -11; //repeats tryouts depleted
 }
-
-int sendAndGetResponse_old(uchar *paket, uchar *response_buffer, unsigned int timeout, unsigned int repeats)
-{
-    unsigned int i;
-    unsigned int repeats_get;
-    unsigned int klok;
-    unsigned int counted_timeout;
-    ssize_t n;
-    bool was_timeout;
-    uchar buf[11];
-    uchar c;
-    
-    counted_timeout = timeout;
-    
-    repeats_get = 0;
-    klok = 0;
-    was_timeout = false;
-    do
-    {
-        int result = transmitData(paket);
-        if (result < 0)
-        {
-            repeats_get++;
-        }
-        else
-        {
-            do
-            {
-                i = 0;
-                while(i < 11) {
-                    n = read(uart_fd, (void*)&c, 1);
-                    if (n>0)
-                    {
-                        buf[i] = c;
-                        i++;
-                    }
-                    else
-                    {
-                        usleep(1000);
-                        klok++;
-                        if (klok > counted_timeout)
-                        {
-                            repeats_get++;
-                            was_timeout = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if (was_timeout == true)
-                {
-                    was_timeout = false;
-                    break;
-                }
-                
-                if (i == 11) //whole packet was read from uart
-                {
-                    //decide if the packet is really from our node
-                    if (buf[0] == paket[2]) //yes, it is our response
-                    {
-#ifdef DEBUG
-                        printf("raw N:%d %d %d\n", buf[0], buf[7], buf[8]);
-#endif
-                        memcpy(response_buffer, buf, 11);
-                        return 1; //return from function with success
-                    }
-                    else
-                    { //no, it is from other node
-#ifdef DEBUG
-                        printf("Wrong node packet\n");
-#endif
-                        continue; //read next packet from uart buffer
-                    }
-                }
-            } while (1);
-        }
-        usleep(5000);
-    } while( !((was_timeout==true) || (repeats_get > (repeats-1))) );
-    return -1;
-}
-
-
 
 //----------------------------------------------------------------------------------------------------
 // --- higher level UART functions called by program
@@ -546,7 +379,9 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
 {
     uchar rawData[4] = {0xFF, 0xFF, 0xFF, 0xFF};
     int rawLen = 4;
+    auto start_time = std::chrono::high_resolution_clock::now();
     int result = getSensorRawData(nodeNum, sensorNum, (uchar *)&rawData, &rawLen);
+    auto end_time = std::chrono::high_resolution_clock::now();
     //if the getting of raw data fails, 0xFFs will remain in the rawData variable and forces
     //the count&store func to store FFs as sign of error of reading
     
@@ -599,7 +434,13 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
         }
     }
     mutexValues.unlock();
-    
+
+    auto uart_stopwatch = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+#ifdef UART_DEBUG
+
+        printf("Vysledek: %s\n", buf);
+#endif
+
     if ( result > 0)
     {
         int valStrLen;
@@ -608,7 +449,7 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
 
         (*getSensorValStr[ sensType ])(node, sensorNum, &valStr, &valStrLen);
         if (node->is_low_power == 1) sprintf(low_power_str, "(low pwr, Vcc = %.3f V)\n", (double)node->low_power_voltage / 1000.0);
-        printf("## Node %d, sensor %d, value: %s\n%s", nodeNum,  sensorNum, valStr, low_power_str );
+        printf("## Node %d, sensor %d, value: %s (t=%dms)\n%s", nodeNum,  sensorNum, valStr, (int)uart_stopwatch, low_power_str );
         free(valStr);
         return 1;
     }
@@ -616,7 +457,7 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     {
         char low_power_str[40] = "";
         if (node->is_low_power == 1) sprintf(low_power_str, "(low pwr, alive:%d)", node->low_power_alive);
-        printf("##!! ERR getting Node %d, sensor %d value %s\n", nodeNum,  sensorNum, low_power_str);
+        printf("##!! ERR getting Node %d, sensor %d value %s (t=%dms)\n", nodeNum,  sensorNum, low_power_str, (int)uart_stopwatch);
         return -1;
     }
 }

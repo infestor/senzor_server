@@ -184,7 +184,7 @@ void threadProcessQueue(void)
                 //we must check if the value from UART sensor was read with success, else
                 //if it wasnt and its interval is bigger than 35s, we choose
                 //random interval 4-31sec to try it again
-                if ( (performUartValueReadAndSave(rec.nodeNum, rec.sensorNum) < 0) ) //&& (rec.intervalOk > 60)
+                if ( (performUartValueReadAndSave(rec.nodeNum, rec.sensorNum) != 1) ) //&& (rec.intervalOk > 60)
                 {
                     //decide if normal node or low power node
                     //for normal node choose random new interval
@@ -255,7 +255,7 @@ void threadProcessQueue(void)
             {
                 //we must check if the value to UART sensor was written with success
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
-                if ( writeUartSensorData(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
+                if ( writeUartSensorData(rec.nodeNum, rec.sensorNum, rec.sensorVal) != 1 ) //error writing, lets try it again
                 {
 					duplicateRecAgainToQueueIfPossible(&rec);
                 }
@@ -271,7 +271,7 @@ void threadProcessQueue(void)
             {
                 //we must check if the value to UART sensor was written with success
                 //else we use rec.intervalErr as a MAX REPEAT number (must be set on command create)
-                if ( writeUartSensorCalib(rec.nodeNum, rec.sensorNum, rec.sensorVal) < 0 ) //error writing, lets try it again
+                if ( writeUartSensorCalib(rec.nodeNum, rec.sensorNum, rec.sensorVal) != 1 ) //error writing, lets try it again
                 {
 					duplicateRecAgainToQueueIfPossible(&rec);
                 }
@@ -279,13 +279,13 @@ void threadProcessQueue(void)
             }
              else if (rec.cmd == CMD_URGENT_READ)
             {
-                uchar sensor_read_packet[12] = {254, 1, 99, 3, 255, 0, 1, 99, 0, 0, 0, 0};
+                uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 1, 99, 0, 0, 0, 0};
 
-                sensor_read_packet[2] = rec.nodeNum;
-                sensor_read_packet[5] = rec.sensorVal; //command for request
-                sensor_read_packet[7] = rec.sensorNum;
+                sensor_read_packet[1] = rec.nodeNum;
+                sensor_read_packet[4] = rec.sensorVal; //command for request
+                sensor_read_packet[6] = rec.sensorNum;
 
-                if (sendAndGetResponse(sensor_read_packet, (uchar*)urgentReadResponsePacket) >= 0)
+                if (sendAndGetResponse(sensor_read_packet, (uchar*)urgentReadResponsePacket) == 1)
                 {
                     //on success reading back
                     threadProcessingPriotityCommand = false;
