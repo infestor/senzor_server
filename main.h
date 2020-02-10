@@ -145,8 +145,9 @@ unsigned int randr(unsigned int min, unsigned int max);
 
 //uart.cpp
 int setup_uart(const char *port_name);
-int transceiveData(uchar *paket);
-int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout = 1000, unsigned int repeats = 1);
+//int transceiveData(uchar *paket);
+int transmitData(uchar *paket);
+int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout = 30, unsigned int repeats = 1);
 int getSensorRawData(uchar nodeNum, uchar sensorNum, uchar *data, int *dataLen);
 int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum);
 int writeUartSensorData(uchar nodeNum, uchar sensorNum, int sensorData);

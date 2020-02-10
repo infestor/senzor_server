@@ -63,7 +63,68 @@ int setup_uart(const char *port_name)
     return 1;
 }
 
-int transceiveData(uchar *paket)
+
+int transmitData(uchar *paket)
+{
+	ssize_t n;
+    unsigned char buf[3];
+	unsigned char c;
+
+    buf[0] = 0xFE; //use first byte of buf as place from where the start chanracter 0xFE will be transmitted to nrf_master
+	n = write(uart_fd, buf, 1);
+    if (n < 0) { return -1; }
+
+    n = write(uart_fd, (void*)paket, 11); //transmit normal packet
+    if (n < 0) { return -1; }
+
+    memset(&buf, 0, sizeof(buf) );
+	//tcflush(uart_fd, TCIOFLUSH);
+
+    unsigned int i = 0;
+    unsigned timeout = 1100;
+
+    while (i < 2) {
+    	n = read(uart_fd, (void*)&c, 1);
+        if (n > 0)
+        {
+            buf[i] = c;
+            i++;
+        }
+        else
+        {
+            timeout--; //1100 * 20us = 22ms
+            if (timeout == 0) { return -1; }
+            usleep(20);
+        }
+    }
+    buf[2] = 0;
+
+    // recognize response
+    if ( strncmp((char*)buf, "OK", 2) != 0)
+    {
+        //eliminujeme nacteni realneho paketu tim ze ho rozpozname
+        if ( (strncmp((char*)buf, "ER", 2) != 0) && (strncmp((char*)buf, "TO", 2) != 0) )
+        {
+            //neni to odpoved na send paket, takze jsou to prvni 2 bajty z realneho paketu
+            //ten nepotrebujem, protoze zrejme prisel nejak opozdene, tudiz nactem zbylych 9 bajtu
+            //a tim se v bufferu posuneme na zacatek dalsiho mozneho paketu/potvrzeni
+            while ( (n = read(uart_fd, (void*)&c, 1)) > 0) {}
+
+            return -1;
+        }
+        else //TO or ER received
+        {
+        	return 0;
+        }
+    }
+    else
+    {
+    	return 1;
+    }
+}
+
+
+int transceiveData_old(uchar *paket)
 {
     ssize_t n;
     int i, repeats_send;
@@ -152,6 +213,62 @@ int transceiveData(uchar *paket)
 //----------------------------------------------------------------------------------------------------
 int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout, unsigned int repeats)
 {
+	ssize_t n;
+	unsigned int cycles = 0;
+	unsigned char buf[11];
+	unsigned int timeout_internal = 100;
+
+	while ( (cycles < repeats) && (timeout_internal > 0) )
+	{
+		int result = transmitData(paket);
+		if (result == -1) {
+			return -1;
+		} else if (result == 0) {
+			cycles++;
+			continue;
+		}
+
+		unsigned int i = 0;
+		while(i < 11) {
+			unsigned char c;
+
+			n = read(uart_fd, (void*)&c, 1);
+			if (n > 0)
+			{
+				buf[i] = c;
+				i++;
+			}
+			else
+			{
+				timeout_internal--; //100 * 100us = 10ms
+				if (timeout_internal == 0) { break; }
+				usleep(100);
+			}
+		}
+
+		if (i == 11) //whole packet was read from uart
+		{
+			//decide if the packet is really from our node
+			if (buf[0] == paket[1]) //yes, it is our response (transmitter is the same as target)
+			{
+				memcpy(response_buffer, buf, 11);
+				return 1; //return from function with success
+			}
+			else
+			{ //no, it is from other node
+				tcflush(uart_fd, TCIFLUSH);
+				cycles++;
+				continue;
+			}
+		}
+	} // end WHILE
+
+	if (timeout_internal == 0) {return -10;} //timeout occured
+	return -11; //repeats tryouts depleted
+}
+
+int sendAndGetResponse_old(uchar *paket, uchar *response_buffer, unsigned int timeout, unsigned int repeats)
+{
     unsigned int i;
     unsigned int repeats_get;
     unsigned int klok;
@@ -168,7 +285,7 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
     was_timeout = false;
     do
     {
-        int result = transceiveData(paket);
+        int result = transmitData(paket);
         if (result < 0)
         {
             repeats_get++;
@@ -230,6 +347,8 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
     return -1;
 }
 
+
+
 //----------------------------------------------------------------------------------------------------
 // --- higher level UART functions called by program
 //----------------------------------------------------------------------------------------------------
@@ -237,13 +356,13 @@ int getNodePresentation(uchar nodeNnum, NodeSpecsT *paket)
 {
 //note: packet sent to master over uart must have 0xFE byte at the beginning
 //so useful data of packet starts at index 1 !!
-    uchar pres_req_packet[12] = {254, 1, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0};
-    pres_req_packet[2] = nodeNnum;
+    uchar pres_req_packet[11] = {1, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0};
+    pres_req_packet[1] = nodeNnum;
     uchar respPacket[11];
     
     memset(respPacket, 0, 11);
     
-    if (sendAndGetResponse(pres_req_packet, respPacket, 50, 2) >= 0 )
+    if (sendAndGetResponse(pres_req_packet, respPacket, 50, 2) == 1 )
     {
         paket->node = respPacket[0];
         paket->num_sensors = respPacket[4];
@@ -261,13 +380,13 @@ int getSensorRawData(uchar nodeNum, uchar sensorNum, uchar *data, int *dataLen)
 {
 //note: packet sent to master over uart must have 0xFE byte at the beginning
 //so useful data of packet starts at index 1 !!
-    uchar sensor_read_packet[12] = {254, 1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
+    uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
     uchar respPacket[11];
 
-    sensor_read_packet[2] = nodeNum;
-    sensor_read_packet[7] = sensorNum;
+    sensor_read_packet[1] = nodeNum;
+    sensor_read_packet[6] = sensorNum;
 
-    if (sendAndGetResponse(sensor_read_packet, respPacket) >= 0)
+    if (sendAndGetResponse(sensor_read_packet, respPacket) == 1)
     {
         *dataLen = respPacket[5]; //length value
         memcpy(data, &respPacket[7], *dataLen);
@@ -398,31 +517,27 @@ void revealNodes(void)
 
 int writeUartSensorData(uchar nodeNum, uchar sensorNum, int sensorData)
 {
-//note: packet sent to master over uart must have 0xFE byte at the beginning
-//so useful data of packet starts at index 1 !!
-  uchar paket[12] = {254, 1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
-    paket[2] = nodeNum;
-    paket[5] = 1; //write cmd
-    paket[6] = 1; //length of data written
-    paket[7] = sensorNum;
-    paket[8] = uchar(sensorData);
+  uchar paket[11] = {1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
+    paket[1] = nodeNum;
+    paket[4] = 1; //write cmd
+    paket[5] = 1; //length of data written
+    paket[6] = sensorNum;
+    paket[7] = uchar(sensorData);
   
-  int result = transceiveData(paket);
+  int result = transmitData(paket);
   return result;
 }
 
 int writeUartSensorCalib(uchar nodeNum, uchar sensorNum, int calibData)
 {
-//note: packet sent to master over uart must have 0xFE byte at the beginning
-//so useful data of packet starts at index 1 !!
-  uchar paket[12] = {254, 1, 99, 3, 255, 5, 1, 99, 0, 0, 0, 0};
-    paket[2] = nodeNum;
-    paket[5] = CALIBRATION_WRITE; //calibration write cmd
-    paket[6] = 1; //length of data written
-    paket[7] = sensorNum;
-    paket[8] = uchar(calibData);
+  uchar paket[11] = {1, 99, 3, 255, 5, 1, 99, 0, 0, 0, 0};
+    paket[1] = nodeNum;
+    paket[4] = CALIBRATION_WRITE; //calibration write cmd
+    paket[5] = 1; //length of data written
+    paket[6] = sensorNum;
+    paket[7] = uchar(calibData);
   
-  int result = transceiveData(paket);
+  int result = transmitData(paket);
   printf("## setCalib - r:%i, newVal:%d\n", result, calibData);
   return result;
 }
