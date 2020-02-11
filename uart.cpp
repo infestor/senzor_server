@@ -41,29 +41,28 @@ int setup_uart(const char *port_name)
 	    perror(bu);
 	    return(-1);
     }
-    
+
     struct termios options;
     tcgetattr(uart_fd, &options);
     //cfmakeraw(&options);
-    
+
     options.c_iflag = IGNBRK | IGNPAR | IXANY;
     options.c_oflag = 0;
     options.c_lflag = 0;
     options.c_cflag = CLOCAL | CREAD | CS8;
-    
+
     options.c_cc[VMIN] = 0;
     options.c_cc[VTIME] = 0;
     cfsetispeed(&options, B2000000); //B57600);
     cfsetospeed(&options, B2000000); //B57600);
-    
+
     tcsetattr(uart_fd, TCSANOW, &options);
-    
+
     // Turn off blocking for reads, use (uart_fd, F_SETFL, FNDELAY) if you want that
     //fcntl(uart_fd, F_SETFL, FNDELAY);
-    
+
     return 1;
 }
-
 
 int transmitData(uchar *paket)
 {
@@ -126,7 +125,7 @@ int transmitData(uchar *paket)
 
 //----------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------
-int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout, unsigned int repeats)
+int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int repeats)
 {
 	ssize_t n;
 	unsigned int cycles = 0;
@@ -187,15 +186,18 @@ int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeou
 //----------------------------------------------------------------------------------------------------
 int getNodePresentation(uchar nodeNnum, NodeSpecsT *paket)
 {
-//note: packet sent to master over uart must have 0xFE byte at the beginning
-//so useful data of packet starts at index 1 !!
-    uchar pres_req_packet[11] = {1, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0};
-    pres_req_packet[1] = nodeNnum;
+	//uchar pres_req_packet[11] = {1, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    mirfPacket pres_req_packet;
     uchar respPacket[11];
-    
+
+    pres_req_packet.txAddr = 1;
+    pres_req_packet.rxAddr = nodeNnum;
+    pres_req_packet.type = (PACKET_TYPE) PRESENTATION_REQUEST;
+
     memset(respPacket, 0, 11);
-    
-    if (sendAndGetResponse(pres_req_packet, respPacket, 50, 2) == 1 )
+
+    if (sendAndGetResponse((uchar *)&pres_req_packet, respPacket, 2) == 1 )
     {
         paket->node = respPacket[0];
         paket->num_sensors = respPacket[4];
@@ -205,33 +207,38 @@ int getNodePresentation(uchar nodeNnum, NodeSpecsT *paket)
         }
         return 1; //success
     }
-    
+
     return -1; //node not revealed, return fail
 }
 
 int getSensorRawData(uchar nodeNum, uchar sensorNum, uchar *data, int *dataLen)
 {
-//note: packet sent to master over uart must have 0xFE byte at the beginning
-//so useful data of packet starts at index 1 !!
-    uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
-    uchar respPacket[11];
+    //uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
 
-    sensor_read_packet[1] = nodeNum;
-    sensor_read_packet[6] = sensorNum;
+	uchar respPacket[11];
+    mirfPacket sensor_read_packet;
 
-    if (sendAndGetResponse(sensor_read_packet, respPacket) == 1)
+    sensor_read_packet.txAddr = 1;
+    sensor_read_packet.rxAddr = nodeNum;
+    sensor_read_packet.type = (PACKET_TYPE) REQUEST;
+
+    sensor_read_packet.payload.request_struct.cmd = (CMD_TYPE) READ;
+    sensor_read_packet.payload.request_struct.for_sensor = sensorNum;
+    sensor_read_packet.payload.request_struct.len = 1;
+
+    if (sendAndGetResponse((uchar *)&sensor_read_packet, respPacket) == 1)
     {
         *dataLen = respPacket[5]; //length value
         memcpy(data, &respPacket[7], *dataLen);
         return 1; //return from function with success
     }
-    
+
     return -1; //node probably didnt response, return with fail
 }
 
 void revealNodes(void)
 {
-    for (int nodeNum=2; nodeNum<MAX_NODES; nodeNum++) //nodes starting from 2, because 0 is forbidden and 1 is master node
+    for (int nodeNum = 2; nodeNum < MAX_NODES; nodeNum++) //nodes starting from 2, because 0 is forbidden and 1 is master node
     {
         printf("Trying get info about node %i\n", nodeNum);
         NodeSpecsT node_specs;
@@ -268,17 +275,17 @@ void revealNodes(void)
                     memset((void*)sensorIntervals[nodeNum], 0, sizeof(SENSOR_INTERVAL_REC) * MAX_SENSORS);
                 }
                 //alloc sensor val structures
-                for (int x = 0; x < node_specs.num_sensors; x++ ) 
+                for (int x = 0; x < node_specs.num_sensors; x++ )
                 {
                     nodeValues[nodeNum]->sensors[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
                     memset((void*)nodeValues[nodeNum]->sensors[x], 255, sizeof(SENSOR_VAL_T) );
                     nodeValues[nodeNum]->last_valid_values[x] = (SENSOR_VAL_T*) malloc( sizeof(SENSOR_VAL_T) );
                     memset((void*)nodeValues[nodeNum]->last_valid_values[x], 255, sizeof(SENSOR_VAL_T) );
-                    
+
                     //determine if node is low powered - if any sensor has vylue bigger than 128
                     //that means low power node
                     if (nodeValues[nodeNum]->sensor_types[x] >= LOW_POWER_NODE_SIGN) nodeValues[nodeNum]->is_low_power = 1;
-                    
+
                     //set interval for reading of values from sensor if it is DS1820 - set interval automatically to 60sec
                     if (nodeValues[nodeNum]->sensor_types[x] == TEPLOTA_DS1820)
                     {
@@ -302,7 +309,7 @@ void revealNodes(void)
                         rec.sensorNum = x;
                         //add record to interval vector
                         intervalVect.push_back(rec);
-                    }                    
+                    }
                     else
                     {
                         //else push ONE TIME request for read of sensor value to thread queue
@@ -312,15 +319,15 @@ void revealNodes(void)
                         rec.nodeNum = nodeNum;
                         rec.sensorNum = x;
                         rec.intervalOk = 1; //dont know what was this interval meant for, so I load it with 1
-                        
+
                         mutexQueue.lock();
                         threadQueue.push(rec);
-                        mutexQueue.unlock(); 
+                        mutexQueue.unlock();
                         */
-                    }                   
+                    }
                 }
                 mutexIntervals.unlock();
-                
+
             }
             mutexValues.unlock();
         }
@@ -350,29 +357,41 @@ void revealNodes(void)
 
 int writeUartSensorData(uchar nodeNum, uchar sensorNum, int sensorData)
 {
-  uchar paket[11] = {1, 99, 3, 255, 0, 0, 99, 0, 0, 0, 0};
-    paket[1] = nodeNum;
-    paket[4] = 1; //write cmd
-    paket[5] = 1; //length of data written
-    paket[6] = sensorNum;
-    paket[7] = uchar(sensorData);
-  
-  int result = transmitData(paket);
-  return result;
+	//uchar paket[11] = {1, 99, 3, 255, 1, 1, 99, 255, 0, 0, 0};
+
+    mirfPacket paket;
+
+    paket.txAddr = 1;
+    paket.rxAddr = nodeNum;
+    paket.type = (PACKET_TYPE) REQUEST;
+
+    paket.payload.request_struct.cmd = (CMD_TYPE) WRITE;
+    paket.payload.request_struct.for_sensor = sensorNum;
+    paket.payload.request_struct.payload[0] = uchar(sensorData);
+    paket.payload.request_struct.len = 1;
+
+    int result = transmitData((uchar *)&paket);
+    return result;
 }
 
 int writeUartSensorCalib(uchar nodeNum, uchar sensorNum, int calibData)
 {
-  uchar paket[11] = {1, 99, 3, 255, 5, 1, 99, 0, 0, 0, 0};
-    paket[1] = nodeNum;
-    paket[4] = CALIBRATION_WRITE; //calibration write cmd
-    paket[5] = 1; //length of data written
-    paket[6] = sensorNum;
-    paket[7] = uchar(calibData);
-  
-  int result = transmitData(paket);
-  printf("## setCalib - r:%i, newVal:%d\n", result, calibData);
-  return result;
+	//uchar paket[11] = {1, 99, 3, 255, 5, 1, 99, 0, 0, 0, 0};
+
+    mirfPacket paket;
+
+    paket.txAddr = 1;
+    paket.rxAddr = nodeNum;
+    paket.type = (PACKET_TYPE) REQUEST;
+
+    paket.payload.request_struct.cmd = (CMD_TYPE) CALIBRATION_WRITE;
+    paket.payload.request_struct.for_sensor = sensorNum;
+    paket.payload.request_struct.payload[0] = uchar(calibData);
+    paket.payload.request_struct.len = 1;
+
+    int result = transmitData((uchar *)&paket);
+    printf("## setCalib - r:%i, newVal:%d\n", result, calibData);
+    return result;
 }
 
 int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
@@ -384,7 +403,7 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     auto end_time = std::chrono::high_resolution_clock::now();
     //if the getting of raw data fails, 0xFFs will remain in the rawData variable and forces
     //the count&store func to store FFs as sign of error of reading
-    
+
     //there could not be any check whether the node and sensor exists during saving of new value
     //because this function is only called from inside program loop, where these
     //things were already checked
@@ -392,16 +411,16 @@ int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum)
     volatile NODE_VALUES_T *node = nodeValues[nodeNum];
     uchar sensType = node->sensor_types[sensorNum];
     if (sensType >= LOW_POWER_NODE_SIGN) sensType -= LOW_POWER_NODE_SIGN;
-    
+
     mutexValues.lock();
-    
+
     //test for FFFF value as a sign of error reading from node, so store error value to array
     if (result <= 0) //( (int32_t)*rawData == 0xFFFFFFFF)
     {
         //we must differ normal node and low power node
         //for low power device we leave last valid value until the ALIVE counter is bigger than 0
         //because we are reading the sensor each second so there would be error value displayed most of the time
-        //when the sensor is sleeping        
+        //when the sensor is sleeping
         if ( (node->is_low_power == 0) )
         {
             //put ERROR value inside sensor's place

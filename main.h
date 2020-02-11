@@ -17,7 +17,7 @@
 #define CMD_URGENT_READ 5
 
 //types of sensoors
-#define LOW_POWER_NODE_SIGN 128 
+#define LOW_POWER_NODE_SIGN 128
 #define VYSTUP_ZAP_VYP 0
 #define TEPLOTA 1
 #define DVERNI_SPINAC_ON_OFF 2
@@ -30,8 +30,21 @@
 
 #define LOW_POWER_ALIVE_TIMEOUT 255
 
-typedef unsigned char uint8_t;
 typedef unsigned char uchar;
+
+typedef enum {
+  RESERVED = 0,
+  ACK = 1,
+  ACK_RESP = 2,
+  REQUEST = 3,
+  RESPONSE = 4,
+  PRESENTATION_REQUEST = 5,
+  AUTOSEND = 6,
+  RETRANSLATION = 7,
+  CONFIGURATION = 8,
+  PING = 9,
+  PRESENTATION_RESPONSE = 10
+} PACKET_TYPE;
 
 //nrf message commands
 typedef enum {
@@ -44,23 +57,46 @@ typedef enum {
   CALIBRATION_READ = 6
 } CMD_TYPE;
 
+//for type REQUEST
 typedef struct {
-    uchar txAddr;
-    uchar rxAddr;
-    uchar  type;
-    uchar  counter;
-    uchar  payload[7];
+  uchar cmd; //command to be executed by receiving node
+  uchar len;
+  uchar for_sensor;
+  uchar payload[4];
+} payloadRequestStruct;
+
+
+//for type RESPONSE (kupr odpoved na command READ)
+typedef struct {
+  uchar cmd; //executed command by receiving node (same as in request packet)
+  uchar len;
+  uchar from_sensor;
+  uchar payload[4];
+} payloadResponseStruct;
+
+typedef union {
+  payloadRequestStruct request_struct;
+  payloadResponseStruct response_struct;
+  uchar bytes[sizeof(payloadRequestStruct)];
+} payloadStructUnion;
+
+typedef struct {
+  uchar txAddr;
+  uchar rxAddr;
+  uchar type;
+  uchar counter;
+  payloadStructUnion payload;
 } mirfPacket;
 
 typedef struct {
-    uchar node;
-    uchar num_sensors;
-    uchar sensors[MAX_SENSORS];
+  uchar node;
+  uchar num_sensors;
+  uchar sensors[MAX_SENSORS];
 } NodeSpecsT;
 
 typedef struct {
-	uchar value[4];
-	uchar num_channels;
+  uchar value[4];
+  uchar num_channels;
 } PwmOneToFourBytesT;
 
 typedef union {
@@ -86,23 +122,23 @@ typedef struct {
 } NODE_VALUES_T;
 
 typedef struct {
-    uchar nodeNum;
-    uchar sensorNum;
+  uchar nodeNum;
+  uchar sensorNum;
 } SENSOR_INTERVAL_VECT_REC;
 
 typedef struct {
-    int interval;
-    int countDown;
+  int interval;
+  int countDown;
 } SENSOR_INTERVAL_REC;
 
 //this is for queue of UART data transfer separate thread
 typedef struct {
-    uchar cmd;
-    uchar nodeNum;
-    uchar sensorNum;
-    int sensorVal;
-    int intervalOk;
-    int intervalErr;
+  uchar cmd;
+  uchar nodeNum;
+  uchar sensorNum;
+  int sensorVal;
+  int intervalOk;
+  int intervalErr;
 } THREAD_QUEUE_REC;
 
 
@@ -147,7 +183,7 @@ unsigned int randr(unsigned int min, unsigned int max);
 int setup_uart(const char *port_name);
 //int transceiveData(uchar *paket);
 int transmitData(uchar *paket);
-int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int timeout = 30, unsigned int repeats = 1);
+int sendAndGetResponse(uchar *paket, uchar *response_buffer, unsigned int repeats = 1);
 int getSensorRawData(uchar nodeNum, uchar sensorNum, uchar *data, int *dataLen);
 int performUartValueReadAndSave(uchar nodeNum, uchar sensorNum);
 int writeUartSensorData(uchar nodeNum, uchar sensorNum, int sensorData);

@@ -33,13 +33,13 @@ int saveConfigFiles(void)
         openSucc = (fdParams != NULL) ? true : false;
         if (openSucc == false) fclose(fdIntervals);
     }
-    
+
     if (openSucc == false)
     {
         printf("Cannot open data files for writing!\n");
         return -1;
-    } 
-    
+    }
+
     //write the nodes params file
     for (int i = 0; i < MAX_NODES; i++)
     {
@@ -48,7 +48,7 @@ int saveConfigFiles(void)
             volatile NODE_VALUES_T* p = nodeValues[i];
 
             fprintf(fdParams, "%d:%d:%d:%d:%d:%d:%d:%d\r\n", p->node, p->num_sensors, p->sensor_types[0], p->sensor_types[1], p->sensor_types[2], p->sensor_types[3], p->sensor_types[4], p->sensor_types[5]);
-            
+
             //save user defined names of sensors
             for (int x=0; x < p->num_sensors; x++)
             {
@@ -56,39 +56,39 @@ int saveConfigFiles(void)
             }
         }
     }
-    
+
     //write intervals file
     for (int i = 0; i < MAX_NODES; i++)
     {
         if (sensorIntervals[i] != NULL)
         {
             volatile SENSOR_INTERVAL_REC *p = sensorIntervals[i];
-            
+
             fprintf(fdIntervals, "%d", i); //start line with node num
-            
+
             //if the intervals array pointer relating to node is not null
             //then it means, thah all sensors structures in this node has been allocated
             for (int x=0; x < MAX_SENSORS; x++)
             {
                 fprintf(fdIntervals, ":%i,%i", (p[x]).interval, (p[x]).countDown);
             }
-            
+
             fprintf(fdIntervals, "\r\n");
         }
     }
-        
+
     //close both files
     fclose(fdIntervals);
-    fclose(fdParams); 
+    fclose(fdParams);
 
-    return 1;  
+    return 1;
 }
 
 int readConfigFiles(void)
 {
     FILE *fd = NULL;
     const char *fname;
-    
+
     //first read sensor params file
     //try if file exists and try to open for reading
     fname = "nodeparams.cfg";
@@ -103,7 +103,7 @@ int readConfigFiles(void)
             char *line = NULL;
             size_t L = 0;
             ssize_t read;
-            
+
             while ((read = getline(&line, &L, fd)) != -1) {
                 //count colons, if there is MAX_SENSORS+1 of them, then it is node line,
                 //else it is error
@@ -116,7 +116,7 @@ int readConfigFiles(void)
                     poleLen = explode(line, ":", &pole);
                     int node = atoi(pole[0]);
                     int numS = atoi(pole[1]);
-                    
+
                     nodeValues[node] = (NODE_VALUES_T*)malloc(sizeof(NODE_VALUES_T) );
                     memset((void*)nodeValues[node], 0, sizeof(NODE_VALUES_T) );
                     nodeValues[node]->node = node;
@@ -128,7 +128,7 @@ int readConfigFiles(void)
                         uchar sType = atoi(pole[xxx+2]);
                         nodeValues[node]->sensor_types[xxx] = sType;
                         //determine, if it is low power node
-                        if (sType >= LOW_POWER_NODE_SIGN) nodeValues[node]->is_low_power = 1; 
+                        if (sType >= LOW_POWER_NODE_SIGN) nodeValues[node]->is_low_power = 1;
                     }
 
                     freeArrayOfPointers((void***)&pole, poleLen);
@@ -150,12 +150,12 @@ int readConfigFiles(void)
                         size_t LL = 0;
                         ssize_t r = 0;
                         volatile uchar* volatile lin = NULL;
-                        
+
                         r = getline((char**)&lin, &LL, fd);
                         //strip \r\n from end of line
                         lin[r-1] = 0;
                         lin[r-2] = 0;
-                        
+
                         nodeValues[node]->sensor_names[xxx] = lin;
                         //do not free *lin because we want to *lin remain allocated in sensor names
                     }
@@ -164,7 +164,7 @@ int readConfigFiles(void)
                     numNodes++;
 
                 }
-                
+
                 free(line);
                 line = NULL;
                 L = 0;
@@ -199,7 +199,7 @@ int readConfigFiles(void)
             char *line = NULL;
             size_t L = 0;
             ssize_t read;
-            
+
             while ((read = getline(&line, &L, fd)) != -1) {
                 //count commas ",", if there is MAX_SENSORS of them, then it is node line,
                 //else it is error
@@ -215,15 +215,15 @@ int readConfigFiles(void)
                     //node array is not initialised
                     sensorIntervals[node] = (SENSOR_INTERVAL_REC *) malloc(sizeof(SENSOR_INTERVAL_REC) * MAX_SENSORS);
                     memset((void*)sensorIntervals[node], 0, sizeof(SENSOR_INTERVAL_REC) * MAX_SENSORS);
-                    
+
                     char **pole1;
                     int poleLen1;
-                    
+
                     for (int x = 0; x < MAX_SENSORS; x++)
                     {
                         poleLen1 = explode(pole[x+1], ",", &pole1);
                         int interval = atoi(pole1[0]);
-                        
+
                         //two possibilities - interval is 0 - reading disabled (dont push to vector)
                         //or bigger than 0 - interval enabled (push to vector)
                         if (interval > 0)
@@ -237,7 +237,7 @@ int readConfigFiles(void)
                             SENSOR_INTERVAL_VECT_REC rec;
                             rec.nodeNum = node;
                             rec.sensorNum = x;
-                            
+
                             //add record also to interval vector
                             intervalVect.push_back(rec);
                         }
@@ -246,10 +246,10 @@ int readConfigFiles(void)
                             sensorIntervals[node][x].interval = 0;
                             sensorIntervals[node][x].countDown = 0;
                         }
-                        
+
                         freeArrayOfPointers((void***)&pole1, poleLen1);
                     }
-                    
+
                     freeArrayOfPointers((void***)&pole, poleLen);
                 }
             }

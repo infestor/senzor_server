@@ -10,23 +10,23 @@ extern const double TempCorrections[];
 void countDS1820Temp STORE_VALUE_PARAMS
 {
     int TReading = rawData[0] + (rawData[1] << 8);
-    
+
     uchar SignBit = ((TReading & 0x8000) >> 8);  // test most sig bit
-    
+
     if (SignBit > 0) { // negative
         TReading = (TReading ^ 0xffff) + 1; // 2's comp
     }
-    
+
     double result;
     result = (6.0 * TReading) + TReading / 4.0; // multiply by (100 * 0.0625) or 6.25
     result = result / 100.0;
-    
+
     if (SignBit) { // If its negative
         result = result * (-1.0);
     }
-    
+
     result -= TempCorrections[ nodeP->node ];
-    
+
     nodeP->sensors[sensorNum]->float_val = result;
 }
 

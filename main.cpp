@@ -117,20 +117,20 @@ void threadDecreaseIntervals(void)
             if (sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown == 0)
             {
                 sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].countDown = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval; //reload
-                
+
                 THREAD_QUEUE_REC rec;
                 rec.cmd = CMD_READ;
                 rec.nodeNum = it_vect->nodeNum;
                 rec.sensorNum = it_vect->sensorNum;
                 rec.intervalOk = sensorIntervals[it_vect->nodeNum][it_vect->sensorNum].interval;
-                
+
                 mutexQueue.lock();
                 threadQueue.push(rec);
                 mutexQueue.unlock();
             }
         }
         mutexIntervals.unlock();
-            
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
@@ -148,7 +148,7 @@ void duplicateRecAgainToQueueIfPossible(volatile THREAD_QUEUE_REC *rec)
 	  newRec.sensorNum = rec->sensorNum;
 	  newRec.sensorVal = rec->sensorVal;
 	  newRec.intervalErr = rec->intervalErr - 1;
-	  
+
 	  //add again to self-queue with decreased max-try-counter
 	  mutexQueue.lock();
 	  threadQueue.push(newRec);
@@ -162,7 +162,7 @@ void threadProcessQueue(void)
 
     bool work;
     volatile THREAD_QUEUE_REC rec;
-    
+
     while (1)
     {
         work = false;
@@ -175,7 +175,7 @@ void threadProcessQueue(void)
             work = true;
         }
         mutexQueue.unlock();
-        
+
         if (work == true)
         {
             //handle command type
@@ -220,7 +220,7 @@ void threadProcessQueue(void)
 							sensorIntervals[rec.nodeNum][rec.sensorNum].interval = temp_interval;
 							sensorIntervals[rec.nodeNum][rec.sensorNum].countDown = temp_interval;
 							mutexIntervals.unlock();
-						
+
 							if (temp_interval_before > temp_alive)
 							{
 								temp_alive = 0;
@@ -265,7 +265,7 @@ void threadProcessQueue(void)
                     mutexValues.lock();
                     nodeValues[rec.nodeNum]->sensors[rec.sensorNum]->int_val = rec.sensorVal;
                     mutexValues.unlock();
-                } 
+                }
             }
             else if (rec.cmd == CMD_WRITE_CALIB)
             {
@@ -279,19 +279,25 @@ void threadProcessQueue(void)
             }
              else if (rec.cmd == CMD_URGENT_READ)
             {
-                uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 1, 99, 0, 0, 0, 0};
+                //uchar sensor_read_packet[11] = {1, 99, 3, 255, 0, 1, 99, 0, 0, 0, 0};
 
-                sensor_read_packet[1] = rec.nodeNum;
-                sensor_read_packet[4] = rec.sensorVal; //command for request
-                sensor_read_packet[6] = rec.sensorNum;
+                mirfPacket sensor_read_packet;
 
-                if (sendAndGetResponse(sensor_read_packet, (uchar*)urgentReadResponsePacket) == 1)
+                sensor_read_packet.txAddr = 1;
+                sensor_read_packet.rxAddr = rec.nodeNum;
+                sensor_read_packet.type = (PACKET_TYPE) REQUEST;
+
+                sensor_read_packet.payload.request_struct.cmd = (CMD_TYPE) rec.sensorVal; //command number (its value) - is stored to SensorVal field of thread record (which is not-standart)
+                sensor_read_packet.payload.request_struct.for_sensor = rec.sensorNum;
+                sensor_read_packet.payload.request_struct.len = 1;
+
+                if (sendAndGetResponse((uchar *)&sensor_read_packet, (uchar*)urgentReadResponsePacket) == 1)
                 {
                     //on success reading back
                     threadProcessingPriotityCommand = false;
                     threadProcessingPriotityCommand_result = 1;
                     //result is in urgentReadResponsePacket  (whole received packet)
-                } 
+                }
                 else
                 {
                   if (rec.intervalErr > 0) //we have some more tryouts available
@@ -310,7 +316,7 @@ void threadProcessQueue(void)
                 revealNodes();
                 threadRevealFinished = true;
             }
-            
+
             //after processing record from queue whe have to throw it away!!!
             mutexQueue.lock();
             threadQueue.pop();
@@ -328,12 +334,12 @@ int main(int argc, char ** argv)
 {
     //all nodes are undefined by default (null pointers to their data store structures)
     for (int xx=0; xx < MAX_NODES; xx++) nodeValues[xx] = NULL;
-    
+
     int i = 0;
-    
+
     setvbuf (stdout, NULL, _IONBF, 0); //no caching of output to console
     printf("NRF24L01 SENSOR NET SERVER!\n");
-    
+
     //try to open UART
     printf("Trying UART port on MAC (%s)\n", str_port_name);
     if (setup_uart(str_port_name) == -1)
@@ -350,28 +356,28 @@ int main(int argc, char ** argv)
         }
     }
     printf("UART Port opened..\n");
-    
+
     //observe CTRL-C
     struct sigaction sigIntHandler;
     sigIntHandler.sa_handler = my_ctrl_handler;
     sigemptyset(&sigIntHandler.sa_mask);
     sigIntHandler.sa_flags = 0;
     sigaction(SIGINT, &sigIntHandler, NULL);
-    
+
     //create socket
     vytvoritSocket();
     //printf("\n");
-    
+
     printf("## Reading config files..\n");
     readConfigFiles();
-    
+
     //---------------------------------------
     printf("waiting 5s\n");
     sleep(5);
     tcflush(uart_fd, TCIOFLUSH);
     printf("Ready..\n");
     //---------------------------------------
-    
+
     //find available nodes in network
     revealNodes();
     printf("\nFound nodes %d\n", numNodes);
@@ -391,13 +397,13 @@ int main(int argc, char ** argv)
                 {
                     printf(" | %s", druhy_senzoru_str[ node->sensor_types[x] ]);
                 }
-                
+
             }
             printf("\n");
         }
     }
     printf("\n");
-    
+
     //open file for storing measured values (deprecated)
     out_fd = fopen("./temperatures.txt", "a");
     if (out_fd == NULL)
@@ -406,19 +412,19 @@ int main(int argc, char ** argv)
         cleanup();
         exit(10);
     }
-    
+
     printf("Starting background THREAD for handling UART comm\n");
     std::thread threadUART(threadProcessQueue);
 	//usleep(50000);
     printf("Starting background THREAD for decreasing countdowns in queue\n");
     std::thread threadCOUNTDOWN(threadDecreaseIntervals);
-        
+
     printf("\n");
 
     while (1) //infinite program loop
     {
-        
-        //handling existing socket connections 
+
+        //handling existing socket connections
         if (incoming_conns > 0)
         {
             int rv = poll(ufds, incoming_conns, 20);
@@ -479,13 +485,13 @@ int main(int argc, char ** argv)
                 } while ( (ind < incoming_conns) && (incoming_conns > 0) );
             }
         }
-        
+
         //accepting new socket connections (if any)
         if (incoming_conns < MAX_CONNS)
         {
             bool socketAccepted = false;
 			volatile int incoming_sd;
-			
+
             while ( (incoming_sd = accept(socketfd, NULL, NULL)) > 0 )
             {
                 socketAccepted = true;
@@ -504,13 +510,13 @@ int main(int argc, char ** argv)
             //if some socked accepted - immediately return to begin of loop without sleeping, and poll incoming data
             if (socketAccepted == true) continue;
         }
-        
+
         usleep(10000);
-        
+
         //end of infinite program loop
         //tcflush(uart_fd, TCIOFLUSH); //we can only flush in separate thread, because only it can access uart
     }
-    
+
     //cleanup file descriptors etc.
     cleanup();
     return 0;

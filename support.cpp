@@ -64,21 +64,21 @@ int explode(char* str, const char* delim, char ***r) {
 int appendToBuffer(uchar **buf, int *len, int *pos, uchar *msg, int msgLen)
 {
     int bufRemain = *len - ((*pos)+1); //remainig size of buffer
-    
+
     if (bufRemain < msgLen) //buffer is not big enough, realloc it
     {
         *len = *len + (msgLen-bufRemain);
         *buf = (uchar *)realloc(*buf, *len);
     }
-    
+
     memcpy(*buf + *pos + 1, msg, msgLen);
     *pos = *pos + msgLen;
-    
+
     return 1;
 }
 
 void cleanup(void)
-{   
+{
     close(uart_fd);
     fclose(out_fd);
     if (socketfd > 0) close(socketfd); //close listening socket
@@ -93,7 +93,7 @@ void cleanup(void)
     //since the array is static and it in fact does violation of memory access when it tries to free the array itself
     //freeArrayOfPointers((void***)&sensorIntervals, MAX_NODES);
     //and we will use for that the same cycle as for freeing node values because it also uses MAX_NODES as end
-    
+
     //free stored node values
     for (int i = 0; i < MAX_NODES; i++)
     {
@@ -114,14 +114,14 @@ void my_ctrl_handler(int s){
 int vytvoritSocket()
 {
     int status;
-    
+
     /*struct addrinfo host_info;
      struct addrinfo *host_info_list;
      memset(&host_info, 0, sizeof host_info);
      host_info.ai_family = AF_INET;     // IP version not specified. Can be both.
      host_info.ai_socktype = SOCK_STREAM; // Use SOCK_STREAM for TCP or SOCK_DGRAM for UDP.
      host_info.ai_flags = AI_PASSIVE;     // IP Wildcard
-     
+
      status = getaddrinfo(NULL, "29443", &host_info, &host_info_list);
      if (status != 0)
      {
@@ -130,14 +130,14 @@ int vytvoritSocket()
      exit(9);
      }
      */
-    
+
     printf("Creating a socket...\n");
     //socketfd = socket(host_info_list->ai_family, host_info_list->ai_socktype, host_info_list->ai_protocol);
     socketfd = socket(AF_INET, SOCK_STREAM, 0);
     if (socketfd == -1)  { printf("socket error\n"); cleanup(); exit(9); }
     int yes = 1;
     status = setsockopt(socketfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-    
+
     sockaddr_in serv_addr;
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -146,7 +146,7 @@ int vytvoritSocket()
     //status = bind(socketfd, host_info_list->ai_addr, host_info_list->ai_addrlen);
     //freeaddrinfo(host_info_list);
     if (status == -1)  {printf("bind error\n"); cleanup(); exit(9); }
-    
+
     //socket callback
     fcntl(socketfd, F_SETOWN, getpid());
     int flags = fcntl(socketfd, F_GETFL, 0);
@@ -160,11 +160,11 @@ int vytvoritSocket()
      sigIntHandler.sa_flags = SA_SIGINFO;
      sigaction(signalInt, &sigIntHandler, NULL);
      */
-    
+
     printf("Listening for connections...\n");
     status =  listen(socketfd, MAX_CONNS);
     if (status == -1)  {printf("listen error\n"); cleanup(); exit(9); }
-    
+
     memset(ufds, 0 , sizeof(ufds));
     return 1;
 }
@@ -182,7 +182,7 @@ int removeUfd(uchar ind)
             ufds[pos] = ufds[pos+1];
         }
     }
-    
+
     incoming_conns--;
     return 1;
 }
